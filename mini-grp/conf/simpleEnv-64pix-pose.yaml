@@ -23,7 +23,7 @@ policy:
   dtype: 'float32'
   use_pose_data: 1
 
-testing: false
+testing: true
 eval_vid_iters: 2500
 gradient_accumulation_steps: 1
 

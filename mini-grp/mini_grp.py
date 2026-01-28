@@ -1,5 +1,5 @@
-
-  
+from transformers import AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import threading
@@ -47,8 +47,11 @@ def my_main(cfg: DictConfig):
     text_model = None
     if cfg.dataset.encode_with_t5: ## Load T5 model
         # TODO:    
-        ## Load the T5 model and tokenizer
-        pass
+        # Load the t5 model and tokenizer
+        tokenizer = AutoTokenizer.from_pretrained("t5-small")
+        text_model = AutoModelForSeq2SeqLM.from_pretrained("t5-small")
+        text_model.eval()
+        text_model.to(cfg.device)
 
     from mini_shuffel_buffer import CircularBuffer, get_dataset_portion
 

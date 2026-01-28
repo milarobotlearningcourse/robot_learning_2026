@@ -1,0 +1,12 @@
+outputs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+roble/
+ManiSkill2_real2sim_assets/

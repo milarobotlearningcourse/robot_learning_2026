@@ -2,6 +2,9 @@
 import numpy as np
 import torch
 
+import warnings
+warnings.filterwarnings("ignore")
+
 def get_text_tokens(cfg, tokenizer, text_model, goal, model=None):
     """
     Get the text tokens/embeddings for the goal.
@@ -81,7 +84,8 @@ def eval_model_in_sim(cfg, model, device, log_dir, env, env_unwrapped,
             for step_ in range(cfg.policy.action_stacking):
                 act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
                 obs, reward, done, truncated, info = env.step(act_)
-                reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
+                # print(f"Available keys in info: {info.keys()}") # <--- Add this to debug
+                # reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
                 rewards.append(reward)
                 t=t+1   
                 if done or truncated:

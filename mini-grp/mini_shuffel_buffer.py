@@ -212,8 +212,12 @@ class CircularBuffer:
         from torchvision.transforms import v2 # Recommend v2 for new code
         from einops import rearrange
         if self._cfg.policy.use_image_augmentations:
-            # TODO:
-            ## Add image Augmentations to improve performance
+            # Add image Augmentations to improve performance
+            transform_crop_scale = v2.Compose([
+                v2.RandomResizedCrop(size=(cfg.image_shape[0], cfg.image_shape[1]), scale=(0.8, 1.0), antialias=True),
+                v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+                v2.ToDtype(torch.float32)
+            ])
         else:
             transform_crop_scale = v2.Compose([
                 v2.ToDtype(torch.float32) # Convert to float [0,1] after crop/resize
@@ -239,11 +243,12 @@ class CircularBuffer:
         x_goal_img = x_goal_img.permute(0, 2, 3, 1) # Convert to [B, H, W, C] format from torchvision.
         # TODO: 
         ## Provide the block masking logic for the attention head
-        y = 0 ## discrete or continuous actions
+        y = self._model.encode_action(data["action"][ix + cfg.policy.obs_stacking - 1])
         if cfg.policy.action_stacking > 1:
             ## Stack the next cfg.policy.action_stacking actions together
             for i in range(1, cfg.policy.action_stacking): ## This is slow but works.
-                y = torch.concatenate((y, self._model.encode_action(data["action"][ix +cfg.policy.obs_stacking - 1 +i])), axis=1) ## stack on time timension. 
+                y_next = self._model.encode_action(data["action"][ix +cfg.policy.obs_stacking - 1 +i])
+                y = torch.cat((y, y_next), dim=1) ## stack on time timension. 
         return x, pose, x_goal, x_goal_img, y
     
     def shuffle(self, shared_queue):
@@ -264,9 +269,16 @@ class CircularBuffer:
         import datasets
         from PIL import Image
 
-        ##TODO: fix bug where the saved data can be full of empty arrays after self._count
+        save_count = self._count if self._count < self._size else self._size
+        data_to_save = {}
+        for k, v in self._dataset_tmp.items():
+            if v is None: continue
+            val = v[:save_count]
+            if isinstance(val, torch.Tensor):
+                val = val.cpu().numpy()
+            data_to_save[k] = val
 
-        ds = Dataset.from_dict(self._dataset_tmp)
+        ds = Dataset.from_dict(data_to_save)
         ## create a normal distribution in torch
         a_std, a_mean = (self._dataset_tmp["action"][:self._count] + torch.randn(self._dataset_tmp["action"][:self._count].size(), device=self._cfg.device) * 0.001).std(axis=0) * 1.2, self._dataset_tmp["action"][:self._count].mean(axis=0)
         self._cfg.env.action_std = a_std.cpu().numpy().tolist()

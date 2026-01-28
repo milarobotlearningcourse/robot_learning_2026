@@ -38,6 +38,11 @@ class Head(nn.Module):
         B,T,C = x.shape
         # TODO: 
         ## Provide the block masking logic for the attention head
+        if mask is None: 
+            mask = torch.ones(T, device=x.device, dtype=torch.bool)
+        else: 
+            mask = mask.to(x.device)
+        mask = mask.unsqueeze(0).unsqueeze(0)
         k = self.key(x)
         q = self.query(x)
         wei = q @ k.transpose(-2,-1) * C**-0.5
@@ -92,18 +97,85 @@ class Block(nn.Module):
         return x
 
 
+class PatchEmbedding(nn.Module):
+    def __init__(self, in_channels=3, patch_size=16, emb_size=768):
+        self.patch_size = patch_size
+        super().__init__()
+        # Conv layer to split image into patches and embed them
+        self.projection = nn.Sequential(
+            nn.Conv2d(in_channels, emb_size, kernel_size=patch_size, stride=patch_size),
+            Rearrange('b e h w -> b (h w) e'),
+        )
+        self.cls_token = nn.Parameter(torch.randn(1, 1, emb_size))
+
+    def forward(self, x):
+        b = x.shape[0]
+        x = self.projection(x)
+        cls_tokens = repeat(self.cls_token, '() n e -> b n e', b=b)
+        # Prepend [CLS] token
+        x = torch.cat([cls_tokens, x], dim=1)
+        return x
+
+
 class GRP(nn.Module):
     def __init__(self, cfg, mlp_ratio=4):
         super(GRP, self).__init__()
         self._cfg = cfg
+
+        # ------------------------------------------------------------------
+        # Vocabulary / text configuration
+        # ------------------------------------------------------------------
         chars = cfg.dataset.chars_list
         cfg.vocab_size = len(chars)
-        # TODO: 
-        ## Provide the logic for the GRP network
 
-        # 4) Transformer encoder blocks
+        # ------------------------------------------------------------------
+        # 1) Patch embedding: map flattened image patches -> n_embd
+        #    get_patches_fast produces patches of size (patch_size * patch_size * 3)
+        #    for both observations and goal images.
+        # ------------------------------------------------------------------
+        patch_dim = cfg.patch_size * cfg.patch_size * 3
+        self.patch_embedding = nn.Linear(patch_dim, cfg.n_embd)
 
-        # 5) Classification MLPk
+        # ------------------------------------------------------------------
+        # 2) Text embedding (when not using T5)
+        #    goals_txt is [B, T] of token ids -> [B, T, n_embd]
+        # ------------------------------------------------------------------
+        if not cfg.dataset.encode_with_t5:
+            self.token_embedding_table = nn.Embedding(cfg.vocab_size, cfg.n_embd)
+
+        # ------------------------------------------------------------------
+        # 3) Positional embeddings
+        #    Compute an upper bound on sequence length:
+        #    CLS + obs_patches + GOAL_IMG + goal_patches + text_tokens
+        # ------------------------------------------------------------------
+        h, w, _ = cfg.image_shape
+        patches_per_image = (h // cfg.patch_size) * (w // cfg.patch_size)
+        obs_patches_max = patches_per_image * cfg.policy.obs_stacking
+        goal_patches = patches_per_image
+        max_seq_len = 1 + obs_patches_max + 1 + goal_patches + cfg.max_block_size
+        self.pos_embedding = nn.Parameter(
+            torch.randn(1, max_seq_len, cfg.n_embd)
+        )
+
+        # ------------------------------------------------------------------
+        # 4) Special tokens: CLS and GOAL_IMG
+        # ------------------------------------------------------------------
+        self.cls_token = nn.Parameter(torch.randn(1, 1, cfg.n_embd))
+        self.goal_img_token = nn.Parameter(torch.randn(1, 1, cfg.n_embd))
+
+        # ------------------------------------------------------------------
+        # 5) Transformer encoder blocks
+        # ------------------------------------------------------------------
+        self.blocks = nn.ModuleList(
+            [Block(cfg.n_embd, cfg.n_head, cfg.dropout) for _ in range(cfg.n_blocks)]
+        )
+
+        # ------------------------------------------------------------------
+        # 6) Action head: map CLS embedding -> action vector
+        # ------------------------------------------------------------------
+        self.action_head = nn.Linear(
+            cfg.n_embd, cfg.action_dim * cfg.policy.action_stacking
+        )
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -114,34 +186,111 @@ class GRP(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, images, goals_txt, goal_imgs, targets=None, pose=None, mask_=False):
-        n, c, h, w = images.shape
-        obs_patches = get_patches_fast(images, self._cfg)
-        patches_g = get_patches_fast(goal_imgs, self._cfg)
+        """
+        images:    [B, H, W, C_obs]
+        goals_txt: [B, T] (token ids) or [B, T, n_embd] if encode_with_t5
+        goal_imgs: [B, H, W, 3]
+        """
+        B, _, _, _ = images.shape
+
+        # ------------------------------------------------------------------
+        # 1) Extract patches from observation and goal images
+        # ------------------------------------------------------------------
+        obs_patches = get_patches_fast(images, self._cfg)      # [B, N_obs, patch_dim]
+        goal_patches = get_patches_fast(goal_imgs, self._cfg)  # [B, N_goal, patch_dim]
+
+        # ------------------------------------------------------------------
+        # 2) Encode text goals
+        # ------------------------------------------------------------------
         if self._cfg.dataset.encode_with_t5:
+            # goals_txt is already [B, T, n_embd]
             goals_e = goals_txt
-            B, T, E = goals_txt.shape
+            _, T, _ = goals_txt.shape
         else:
+            # goals_txt is [B, T] of token ids -> [B, T, n_embd]
             goals_e = self.token_embedding_table(goals_txt)
-            B, E = goals_txt.shape
-            T = self._cfg.max_block_size
+            B_txt, T = goals_txt.shape
+            assert B_txt == B, "Batch size mismatch between images and text goals"
 
-        # TODO: 
-        ## Provide the logic to produce the output and loss for the GRP
-        
-        # Map the vector corresponding to each patch to the hidden size dimension
+        # ------------------------------------------------------------------
+        # 3) Project patches to embedding space
+        # ------------------------------------------------------------------
+        obs_token = self.patch_embedding(obs_patches)   # [B, N_obs, n_embd]
+        goal_token = self.patch_embedding(goal_patches) # [B, N_goal, n_embd]
 
-        # Adding classification and goal_img tokens to the tokens
+        # ------------------------------------------------------------------
+        # 4) Special tokens
+        # ------------------------------------------------------------------
+        cls_token = self.cls_token.expand(B, -1, -1)          # [B, 1, n_embd]
+        goal_img_token = self.goal_img_token.expand(B, -1, -1)  # [B, 1, n_embd]
 
-        # Adding positional embedding
+        # ------------------------------------------------------------------
+        # 5) Concatenate tokens in sequence:
+        #    [CLS, obs_token, GOAL_IMG, goal_token, goals_e]
+        # ------------------------------------------------------------------
+        tokens = torch.cat(
+            [cls_token, obs_token, goal_img_token, goal_token, goals_e],
+            dim=1,
+        )  # [B, seq_len, n_embd]
+        seq_len = tokens.size(1)
 
-        # Compute blocked masks
+        # ------------------------------------------------------------------
+        # 6) Add positional embeddings
+        # ------------------------------------------------------------------
+        pos = self.pos_embedding[:, :seq_len, :]
+        tokens = tokens + pos
 
-        # Transformer Blocks
+        # ------------------------------------------------------------------
+        # 7) Build a simple block mask to switch between text and image goals
+        #    mask_ == True : mask goal image tokens (use text goal)
+        #    mask_ == False: mask text tokens      (use image goal)
+        # ------------------------------------------------------------------
+        mask = None
+        if mask_ is not None:
+            # Start / end indices for segments in the concatenated sequence
+            n_cls = 1
+            n_obs = obs_token.size(1)
+            n_goal_img = 1
+            n_goal = goal_token.size(1)
 
-        # Getting the classification token only
+            cls_idx = 0
+            obs_start = cls_idx + n_cls
+            obs_end = obs_start + n_obs
+            goal_img_idx = obs_end
+            goal_start = goal_img_idx + n_goal_img
+            goal_end = goal_start + n_goal
+            text_start = goal_end
+            text_end = text_start + T  # should equal seq_len
 
-        # Compute output and loss
-        return (out, loss)
+            mask = torch.ones(seq_len, dtype=torch.bool, device=tokens.device)
+            if mask_:
+                # Mask out goal image tokens
+                mask[goal_img_idx:goal_end] = False
+            else:
+                # Mask out text tokens
+                mask[text_start:text_end] = False
+
+        # ------------------------------------------------------------------
+        # 8) Transformer blocks
+        # ------------------------------------------------------------------
+        for block in self.blocks:
+            tokens = block(tokens, mask=mask)
+
+        # ------------------------------------------------------------------
+        # 9) Classification token and action head
+        # ------------------------------------------------------------------
+        cls_output = tokens[:, 0, :]           # [B, n_embd]
+        out = self.action_head(cls_output)     # [B, action_dim * action_stacking]
+
+        # ------------------------------------------------------------------
+        # 10) Loss (continuous actions by default, using MSE)
+        # ------------------------------------------------------------------
+        if targets is not None:
+            loss = F.mse_loss(out, targets)
+        else:
+            loss = torch.tensor(0.0, device=out.device)
+
+        return out, loss
     
     def resize_image(self, image):
         """
