@@ -1,8 +1,8 @@
-to_name: gberseth/bridge-data-64px-test # https://huggingface.co/datasets/gberseth/libero-data-64px-full
-num_episodes: 0
-chunk_size: 1
+to_name: gberseth/libero-data-64px-full # https://huggingface.co/datasets/gberseth/libero-data-64px-full
+num_episodes: 20
+chunk_size: 5
 buffer_size: 50000
-encode_with_t5: false
+encode_with_t5: true
 t5_version: "t5-small"
 chars_list:  [' ', ',', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   '!', '?', '"', "'", '(', ')', '-', '_', ':', ';',
@@ -10,37 +10,35 @@ chars_list:  [' ', ',', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 
   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
 load_dataset: true
-download_all: false
 save_initial_dataset: false
-use_generator: false
 dataset_indicies: {
   # "/network/datasets/openxembodiment/datasets/bridge/0.1.0/": {"start": 11, size: 28935, weight: 0.3, dataset_key: "bridge_oxe", scale: 1.0},
   # "/network/datasets/openxembodiment/datasets/stanford_robocook_converted_externally_to_rlds/0.1.0": {"start": 0, size: 1000000, weight: 0.3, dataset_key: "stanford_robocook_converted_externally_to_rlds", scale: 1.0},
   # "/network/datasets/openxembodiment/datasets/maniskill_dataset_converted_externally_to_rlds/0.1.0": {"start": 0, size: 1000000, weight: 0.3, dataset_key: "maniskill_dataset_converted_externally_to_rlds", scale: 1.0},
   # "/network/projects/real-g-grp/modified_libero_rlds/libero_90_no_noops/1.0.0": {"start": 0, size: 1000000, weight: 0.3, dataset_key: "maniskill_dataset_converted_externally_to_rlds", scale: 1.0},
   "gs://gresearch/robotics/bridge/0.1.0/": {start: 0, weight: 1.0, dataset_key: "bridge_oxe", scale: 1.0},
-  # "gs://gresearch/robotics/stanford_robocook_converted_externally_to_rlds/0.1.0": {"start": 0, weight: 1.0, dataset_key: "stanford_robocook_converted_externally_to_rlds", scale: 1.0},
+  "gs://gresearch/robotics/stanford_robocook_converted_externally_to_rlds/0.1.0": {"start": 0, weight: 1.0, dataset_key: "stanford_robocook_converted_externally_to_rlds", scale: 1.0},
   # "gs://gresearch/robotics/maniskill_dataset_converted_externally_to_rlds/0.1.0": {start: 0, weight: 1.0, dataset_key: "maniskill_dataset_converted_externally_to_rlds", scale: 1.0},
   # "/network/datasets/openxembodiment/datasets/language_table/0.0.1": {"start": 0, size: 1000000, weight: 0.5, "image_key": "rgb", "text_key": "instruction"},  
   # "/network/datasets/openxembodiment/datasets/kuka/0.1.0": {"start": 0, size: 1000000, weight: 0.5, "image_key": "image", "text_key": "natural_language_instruction", "action_key": "gripper_closedness_action", scale: 0.1},  
   # "/network/datasets/openxembodiment/datasets/utokyo_saytap_converted_externally_to_rlds/0.1.0/": {"start": 11, size: 28935, weight: 0.3, dataset_key: "saytap", scale: 1.0},
 }
 "action_std": [
-      0.0118407579138875,
-      0.01651778072118759,
-      0.01558756735175848,
-      0.03479960933327675,
-      0.03878577798604965,
-      0.05862835422158241,
-      0.5686280727386475
-    ]
+    0.2755078673362732,
+    0.352868914604187,
+    0.3764951825141907,
+    0.07468929141759872,
+    0.08207540959119797,
+    0.14809995889663696,
+    1.3713711500167847
+  ]
 "action_mean": [
-      0.00032659756834618747,
-      0.0002364425890846178,
-      -0.0001985691487789154,
-      -0.0003516025608405471,
-      -0.0005819069338031113,
-      0.0006634143064729869,
-      0.659541130065918
-    ]
+    0.02461858280003071,
+    0.022891279309988022,
+    -0.045159097760915756,
+    0.0011062328703701496,
+    0.0019464065553620458,
+    0.001989248674362898,
+    -0.02906678058207035
+  ]
 gripper_closed_std: 1.0

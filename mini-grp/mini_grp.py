@@ -1,5 +1,6 @@
 from transformers import AutoModelForSeq2SeqLM
 from transformers import AutoTokenizer
+import dill
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import threading
@@ -22,7 +23,21 @@ def get_inverse_sqrt_lambda(optimizer, warmup_steps):
             return float(warmup_steps) / float(current_step)**0.5
     return lr_lambda
 
-@hydra.main(config_path="./conf", config_name="simpleEnv-64pix-pose")
+def get_linear_lambda(optimizer, warmup_steps, total_steps):
+    """
+    Creates a lambda function for a linear learning rate schedule 
+    with a linear warmup phase and linear decay to zero.
+    """
+    def lr_lambda(current_step):
+        # Linear warmup phase
+        if current_step < warmup_steps:
+            return float(current_step) / float(warmup_steps)
+        # Linear decay phase
+        else:
+            return max(0.0, float(total_steps - current_step) / float(max(1, total_steps - warmup_steps)))
+    return lr_lambda
+
+@hydra.main(config_path="./conf", config_name="64pix-pose")
 def my_main(cfg: DictConfig):
     torch.manual_seed(cfg.r_seed)
     log_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
@@ -55,10 +70,19 @@ def my_main(cfg: DictConfig):
 
     from mini_shuffel_buffer import CircularBuffer, get_dataset_portion
 
-    from grp_model import GRP
-    from grp_model import estimate_loss
+    # Load model based on configuration
+    if cfg.model.type == "convnet":
+        from grp_convnet import GRPConvNet
+        from grp_convnet import estimate_loss
+        model = GRPConvNet(cfg)
+        print(f"Using ConvNet model")
+    else:
+        from grp_model import GRP
+        from grp_model import estimate_loss
+        model = GRP(cfg)
+        print(f"Using Transformer model")
+    
     from sim_eval import eval_model_in_sim
-    model = GRP(cfg)
     model.to(cfg.device)
     cBuffer = CircularBuffer(cfg.dataset.buffer_size, cfg, model)
     print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
@@ -70,10 +94,15 @@ def my_main(cfg: DictConfig):
 
     # create a PyTorch optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=0.1)
-    import torch.optim.lr_scheduler as lr_scheduler
-    # scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.1, total_iters=cfg.max_iters)
-    # Define the scheduler using LambdaLR
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=get_inverse_sqrt_lambda(optimizer, warmup_steps=2000))
+    # Select learning rate schedule based on configuration
+    schedule_type = getattr(cfg, 'lr_schedule', 'inverse_sqrt')  # default to inverse_sqrt
+    if schedule_type == 'linear':
+        import torch.optim.lr_scheduler as lr_scheduler
+        from torch.optim.lr_scheduler import LinearLR
+        scheduler = LinearLR(optimizer, start_factor=1.0, end_factor=0.1, total_iters=cfg.max_iters)
+    else:  # inverse_sqrt
+        lr_lambda = get_inverse_sqrt_lambda(optimizer, warmup_steps=2000)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     if "simple_env" in cfg.simEval:
         import simpler_env
@@ -89,8 +118,14 @@ def my_main(cfg: DictConfig):
     data_thread = threading.Thread(target=cBuffer.shuffle, args=(shared_queue,))
     data_thread.start()
 
-    for iter in range(cfg.max_iters):
+    # Initialize cProfile if enabled
+    profiler = None
+    if cfg.profiler.enable:
+        import cProfile, pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
 
+    for iter in range(cfg.max_iters):
         if iter % cfg.eval_interval == 0 or iter == cfg.max_iters - 1:
             losses = estimate_loss(model, cBuffer)
             print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, memory {torch.cuda.memory_allocated(cfg.device) / 1e6:.2f} MB")
@@ -98,11 +133,15 @@ def my_main(cfg: DictConfig):
                 wandb.log({"train loss": losses['train'], "val loss": losses['val'],
                         "memory": torch.cuda.memory_allocated(cfg.device) / 1e6,
                         "buffer_size": asizeof.asizeof(cBuffer) / 1e6}, step=iter)
+            if cfg.profiler.enable:
+                stats = pstats.Stats(profiler)
+                stats.sort_stats(pstats.SortKey.TIME).print_stats(20)
 
         if iter % cfg.data_shuffel_interval == 0 or iter == cfg.max_iters - 1:
             path_ = "./miniGRP.pth"
-            torch.save(model, path_)
+            torch.save(model, path_, pickle_module=dill) ## serialize class objects as well.
             print("Model saved to " + path_)
+        
         if cfg.simEval and (iter % cfg.eval_vid_iters == 0) and (iter !=0): ## Do this eval infrequently because it takes a fiar bit of compute
             if "simple_env" in cfg.simEval:
                 # Note: moved import of `eval_model_in_sim` into `my_main` to avoid circular imports
@@ -113,7 +152,6 @@ def my_main(cfg: DictConfig):
                 eval_libero(model, device=cfg.device, cfg=cfg, iter_=iter, log_dir=log_dir, 
                             tokenizer=tokenizer, text_model=text_model, wandb=wandb)
 
-
         if iter % cfg.data_shuffel_interval == 0 and iter > 0:
             ## Update the dataset
             shared_queue.put('shuffle')
@@ -122,6 +160,8 @@ def my_main(cfg: DictConfig):
 
         # evaluate the loss
         logits, loss = model(xb, xg, xgi, yb, pose=xp)
+        
+        # backward pass
         loss.backward()
         # max_norm is the maximum allowed norm of the gradients
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -134,6 +174,18 @@ def my_main(cfg: DictConfig):
         wandb.finish()
     shared_queue.put(None)
     data_thread.join()
+    
+    # Disable and print profiling results if enabled
+    if profiler is not None:
+        profiler.disable()
+        import pstats
+        stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')
+        print("\n=== cProfile Results ===")
+        stats.print_stats(30)  # Print top 30 functions
+        stats.dump_stats("profile.prof")
+        print("Profile saved to profile.prof")
+    
     return losses['val']
  
 if __name__ == "__main__":

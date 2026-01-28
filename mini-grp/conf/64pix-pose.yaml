@@ -1,5 +1,5 @@
 defaults:
-  - dataset: fast
+  - dataset: libero
 
 
 experiment:
@@ -9,39 +9,41 @@ experiment:
 
 # Model type: "transformer" or "convnet"
 model: 
-  type: "convnet"
+  type: "transformer"
 
-batch_size: 128 # how many independent sequences will we process in parallel?
-max_block_size: 12 ## Will be overidden by code
+batch_size: 256 # how many independent sequences will we process in parallel?
+max_block_size: 16 ## Tokens for langauge processing
 vocab_size: 32 ## Will be overidden by code
 n_patches: 8
 patch_size: 8
-max_iters: 100000
+max_iters: 25000
 eval_interval: 100 # How often to run eval over the validation set
-learning_rate: 3e-3
-eval_iters: 10
+learning_rate: 3e-4
+lr_schedule: linear ## ['inverse_sqrt', 'linear']
+eval_iters: 5
 policy:
   action_stacking: 1
   obs_stacking: 1
   use_image_augmentations: false
   dtype: 'float32'
   use_pose_data: 1
+  random_masking_enabled: false  # Set to false to skip random masking, true to enable it
 
-testing: true
+testing: false
 eval_vid_iters: 2500
 gradient_accumulation_steps: 1
 
-simEval: ["simple_env"] # "simpler_env" or "libero"
+simEval: ["libero"] # "simpler_env" or "libero"
 sim:
-  eval_episodes: 5
-  eval_tasks: [9, 24, 30, 69]
+  eval_episodes: 1
+  eval_tasks: [0, 1, 2, 3]
   episode length: 500
 
 # ------------
 
 r_seed: 1337
 device: "cuda"
-n_embd: 256
+n_embd: 512
 n_head: 16
 n_blocks: 4
 dropout: 0.2

@@ -1,4 +1,5 @@
 
+import dill
 import numpy as np
 import torch
 
@@ -56,16 +57,10 @@ def eval_model_in_sim(cfg, model, device, log_dir, env, env_unwrapped,
         frames = []
         done, truncated, timeLimit, t = False, False, 100, 0
         txt_goal = get_text_tokens(cfg, tokenizer, text_model, instruction, model=model)
+        # obs_hist.append(image) ## Add the new observation to the history buffer
         while not (done or truncated or (t > timeLimit)):
             # action[:3]: delta xyz; action[3:6]: delta rotation in axis-angle representation;
             # action[6:7]: gripper (the meaning of open / close depends on robot URDF)
-            image = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)
-            image = image[:,:,:3] ## Remove last dimension of image color
-            
-            # Store the original image for video before stacking/processing
-            frames.append(image)
-            
-            obs_hist.append(image) ## Add the new observation to the history buffer
             # obs = [obs_["image"] for obs_ in obs] # obs is a list of dicts
             image = np.stack(obs_hist, axis=-1)  # stack along the last dimension
             image = rearrange(image, 'h w c t -> h w (c t)')  # add batch dimension
@@ -84,8 +79,11 @@ def eval_model_in_sim(cfg, model, device, log_dir, env, env_unwrapped,
             for step_ in range(cfg.policy.action_stacking):
                 act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
                 obs, reward, done, truncated, info = env.step(act_)
-                # print(f"Available keys in info: {info.keys()}") # <--- Add this to debug
-                # reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
+                image = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)
+                image = image[:,:,:3] ## Remove last dimension of image color
+                # Store the original image for video before stacking/processing
+                frames.append(image)
+                reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
                 rewards.append(reward)
                 t=t+1   
                 if done or truncated:
@@ -162,6 +160,7 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
     from libero.libero.utils import get_libero_path
     from gymnasium.wrappers import FrameStackObservation
     from einops import rearrange
+    from collections import deque
 
 
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -191,6 +190,9 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
         env.set_init_state(init_states[init_state_id])
         env = FrameStackObservation(DictWrapper(env, obs_key="agentview_image"), cfg.policy.obs_stacking) ## Stacking the observations
         obs, info = env.reset()
+        # obs_hist = deque(maxlen=cfg.policy.obs_stacking)
+        # for _ in range(cfg.policy.obs_stacking):
+        #     obs_hist.append(obs)
 
         mask = get_blocked_mask(cfg, targets=None, T=0) ## Get the blocked mask
         
@@ -199,9 +201,15 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
         frames = []
         rewards = []
         infos = []
-        for step_ in range(250):
+        done, truncated, timeLimit, t, wait_steps = False, False, 400, 0, 10
+        while not (done or truncated or (t > (timeLimit + wait_steps))):
             ## Reshape the image to the correct size and stack the hostory on the last channel dimension
-            image = obs[0]
+            # image = obs[0]
+            if t < wait_steps: ## let object stabalize before acting.
+                obs, reward, done, truncated, info = env.step([0,0,0,0,0,0,-1])
+                # obs_hist.append(obs)
+                t += 1
+                continue
             # obs = obs.reshape((128, 128, 3*cfg.policy.obs_stacking)) ## Assuming the observation is an image of size 128x128 with 3 color channels  
             obs = rearrange(obs, 't h w c -> h w (t c)', c=3, t=cfg.policy.obs_stacking) ## Rearranging the image to have the stacked history in the last channel dimension
             # image = obs[:,:,:3] ## Remove the last dimension of the image color
@@ -214,15 +222,28 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
                         pose=torch.tensor([[np.concatenate( (info["robot0_eef_pos"], 
                                                            info["robot0_eef_quat"][:3],
                                                             [(info["robot0_gripper_qpos"][0] - info["robot0_gripper_qpos"][0]) < 0.005 ]), axis=-1)]], dtype=torch.float32).to(device),
-                        morphology=torch.tensor([0], dtype=torch.uint8).to(device) ## Morphology is 0 for arm, 1 for A1}
+                        # morphology=torch.tensor([0], dtype=torch.uint8).to(device) ## Morphology is 0 for arm, 1 for A1}
                         )
 
-            action = model.decode_action(action[0,0,:7]).cpu().detach().numpy() ## Add in the gripper close action
-            frames.append(image)
-            x = env.step(action)
-            obs, reward, done, truncated, info = x
-            rewards.append(reward)
-            infos.append(info)
+            action = model.decode_action(action[0]).cpu().detach().numpy() ## Add in the gripper close action
+            ## If the actions are stacked into a longer vector execute the sequence of actions
+            for step_ in range(cfg.policy.action_stacking):
+                act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
+                ## Need to process LIBERO gripper action [0, 1] -> [-1, 1], then invert, https://github.com/moojink/openvla-oft/blob/e4287e94541f459edc4feabc4e181f537cd569a8/experiments/robot/libero/run_libero_eval.py#L265
+                act_[6] = ((act_[6] - 0.5) * 2) * -1.0
+
+                obs, reward, done, truncated, info = env.step(act_)
+                # image = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)
+                # image = image[:,:,:3] ## Remove last dimension of image color
+                # Store the original image for video before stacking/processing
+                image = obs[0]
+                frames.append(image)
+                # reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
+                rewards.append(reward)
+                infos.append(info)
+                t=t+1   
+                if done or truncated:
+                    break
             if done:
                 print("Episode finished after {} timesteps".format(step_))
                 break
@@ -230,10 +251,10 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
         print(f"avg reward {np.mean(rewards):.8f}")
         if not cfg.testing:
             wandb.log({"avg reward_"+str(task_id): np.mean(rewards)})
-        import moviepy.editor as mpy
-        clip = mpy.ImageSequenceClip(list(frames), fps=20)
-        path_ = log_dir+"/sim-libero-90-"+str(task_id)+"-"+str(iter_)+".mp4"
-        clip.write_videofile(path_, fps=20)
+        import os
+        path_ = os.path.join(log_dir, f"libero-{iter_}.mp4")
+        import imageio
+        imageio.mimsave(path_, frames, fps=20)
         if not cfg.testing:
             wandb.log({"example": wandb.Video(path_)})
         env.close()
@@ -241,7 +262,7 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
 import hydra
 from omegaconf import DictConfig
 
-@hydra.main(config_path="./conf", config_name="simpleEnv-64pix-pose")
+@hydra.main(config_path="./conf", config_name="64pix-pose")
 def my_main(cfg: DictConfig):
     from mini_shuffel_buffer import CircularBuffer
     import torch
@@ -256,7 +277,7 @@ def my_main(cfg: DictConfig):
     model_dir = hydra.utils.get_original_cwd()+"/mini-grp/miniGRP.pth"
     print ("Loading model from:", model_dir)
     from grp_model import GRP
-    model_ = torch.load(model_dir)
+    model_ = torch.load(model_dir, pickle_module=dill)
     # model_._cgf = cfg
 
     tokenizer = None

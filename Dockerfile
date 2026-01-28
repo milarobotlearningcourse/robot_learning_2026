@@ -1,7 +1,12 @@
 # Base container that includes all dependencies but not the actual repo
 # Updated from templates in the [softlearning (SAC) library](https://github.com/rail-berkeley/softlearning)
 
+# FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04
+# FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 FROM dsalvat1/cudagl:12.3.1-runtime-ubuntu22.04
+# FROM nvidia/cuda:11.6.2-runtime-ubuntu20.04 as base
+# ARCH and CUDA are specified again because the FROM directive resets ARGs
+# (but their default value is retained if set previously)
 
 SHELL ["/bin/bash", "-c"]
 
@@ -68,7 +73,8 @@ RUN pip3 install torch torchvision torchaudio --index-url https://download.pytor
 
 ## Install simulators simpleEnv
 RUN apt-get update && apt-get install -y --no-install-recommends git cmake build-essential libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 ffmpeg libx264-dev
-RUN pip install cmake==3.24.3
+# RUN pip install cmake==3.24.3
+RUN conda install -c conda-forge cmake
 RUN git clone https://github.com/milarobotlearningcourse/SimplerEnv --recurse-submodules
 ## Change directory to SimplerEnv and install ManiSkill2 and ManiSkill2_real2sim
 # RUN cd SimplerEnv/ManiSkill2
@@ -96,8 +102,28 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV SAP_NO_GUI=1
 ENV DISPLAY=:0
 
+## Install Libero
+# RUN pip install cmake==3.24.3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+cmake \
+libglvnd-dev \
+libgl1-mesa-dev \
+libegl1-mesa-dev \
+libgles2-mesa-dev \
+libgbm-dev \
+build-essential \
+&& rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/montrealrobotics/LIBERO.git
+# COPY --link ./LIBERO /playground/LIBERO
+RUN pip install -r ./LIBERO/requirements.txt
+RUN pip install -e ./LIBERO 
+## Check that libero is installed and easy to load
+RUN python -c "import libero"
+
+
 ## Check the file were copied
 RUN ls
 COPY --link . /playground
+# RUN pip install -e ./LIBERO 
 
 ENTRYPOINT [ "python" ]
