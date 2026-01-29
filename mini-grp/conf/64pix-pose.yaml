@@ -1,5 +1,5 @@
 defaults:
-  - dataset: libero
+  - dataset: fast
 
 
 experiment:

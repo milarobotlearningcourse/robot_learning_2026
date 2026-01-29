@@ -1,0 +1,219 @@
+
+
+
+
+Time to load huggingface data and copy:  322.9937002658844
+Loaded dataset with size: 25460
+0.855303 M parameters
+Memory used by the model: 1240.003584 MB
+Memory used by the dataset cBuffer: 2.785664 MB
+Memory used by the dataset cBuffer image: 0.000184 MB
+Memory used by the dataset cBuffer goal image: 0.000184 MB
+Memory used by the dataset cBuffer: t5_language_embedding 1.6e-05 MB
+num <queue.Queue object at 0x745d3439ab90>
+step 0: train loss 1.1327, val loss 1.1366, memory 1248.52 MB
+Model saved to ./miniGRP.pth
+step 100: train loss 1.0745, val loss 1.0859, memory 1302.48 MB
+step 200: train loss 1.0343, val loss 1.0379, memory 1302.48 MB
+step 300: train loss 0.9867, val loss 0.9763, memory 1302.48 MB
+step 400: train loss 0.9471, val loss 0.9406, memory 1302.48 MB
+step 500: train loss 0.9021, val loss 0.9004, memory 1302.48 MB
+step 600: train loss 0.8678, val loss 0.8715, memory 1302.48 MB
+step 700: train loss 0.8319, val loss 0.8312, memory 1302.48 MB
+step 800: train loss 0.8145, val loss 0.8024, memory 1302.48 MB
+step 900: train loss 0.7751, val loss 0.7801, memory 1302.48 MB
+step 1000: train loss 0.7600, val loss 0.7580, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+2026-01-28 01:27:01.825931: I external/local_xla/xla/stream_executor/cuda/cuda_executor.cc:901] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero. See more at https://github.com/torvalds/linux/blob/v6.0/Documentation/ABI/testing/sysfs-bus-pci#L344-L355
+2026-01-28 01:27:01.832137: W tensorflow/core/common_runtime/gpu/gpu_device.cc:2256] Cannot dlopen some GPU libraries. Please make sure the missing libraries mentioned above are installed properly if you would like to use GPU. Follow the guide at https://www.tensorflow.org/install/gpu for how to download and setup the required libraries for your platform.
+Skipping registering GPU devices...
+[2026-01-28 01:27:01,968][absl][INFO] - Constructing tf.data.Dataset bridge for split train[11413:11414], from gs://gresearch/robotics/bridge/0.1.0/
+/home/ben/Documents/Projects/ift6163/robot_learning_2026/mini-grp/mini_shuffel_buffer.py:186: UserWarning: Creating a tensor from a list of numpy.ndarrays is extremely slow. Please consider converting the list to a single numpy.ndarray with numpy.array() before converting to a tensor. (Triggered internally at ../torch/csrc/utils/tensor_new.cpp:278.)
+  self._dataset_tmp["action"][self._index] = torch.tensor(action, dtype=torch.float, device=self._cfg.device)
+A terminé le mélange.
+step 1100: train loss 0.7326, val loss 0.7399, memory 1302.48 MB
+[2026-01-28 01:27:58,986][absl][WARNING] - `TensorInfo.dtype` is deprecated. Please change your code to use NumPy with the field `TensorInfo.np_dtype` or use TensorFlow with the field `TensorInfo.tf_dtype`.
+step 1200: train loss 0.7291, val loss 0.7174, memory 1302.48 MB
+step 1300: train loss 0.7115, val loss 0.7186, memory 1302.48 MB
+step 1400: train loss 0.7081, val loss 0.7136, memory 1302.48 MB
+step 1500: train loss 0.6991, val loss 0.7054, memory 1302.48 MB
+step 1600: train loss 0.6882, val loss 0.6973, memory 1302.48 MB
+step 1700: train loss 0.6909, val loss 0.6926, memory 1302.48 MB
+step 1800: train loss 0.6885, val loss 0.6895, memory 1302.48 MB
+step 1900: train loss 0.6856, val loss 0.6882, memory 1302.48 MB
+step 2000: train loss 0.6882, val loss 0.7006, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 01:36:34,449][absl][INFO] - Constructing tf.data.Dataset bridge for split train[14981:14982], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 2100: train loss 0.6949, val loss 0.6867, memory 1302.48 MB
+step 2200: train loss 0.6869, val loss 0.6896, memory 1302.48 MB
+step 2300: train loss 0.6943, val loss 0.6915, memory 1302.48 MB
+step 2400: train loss 0.6819, val loss 0.6999, memory 1302.48 MB
+step 2500: train loss 0.6991, val loss 0.6881, memory 1302.48 MB
+step 2600: train loss 0.6962, val loss 0.6873, memory 1302.48 MB
+step 2700: train loss 0.6899, val loss 0.6934, memory 1302.48 MB
+step 2800: train loss 0.6911, val loss 0.6898, memory 1302.48 MB
+step 2900: train loss 0.6877, val loss 0.6901, memory 1302.48 MB
+step 3000: train loss 0.6897, val loss 0.6932, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 01:46:09,130][absl][INFO] - Constructing tf.data.Dataset bridge for split train[15634:15635], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 3100: train loss 0.6904, val loss 0.6881, memory 1302.48 MB
+step 3200: train loss 0.7015, val loss 0.6947, memory 1302.48 MB
+step 3300: train loss 0.6926, val loss 0.6870, memory 1302.48 MB
+step 3400: train loss 0.6875, val loss 0.6955, memory 1302.48 MB
+step 3500: train loss 0.7033, val loss 0.6946, memory 1302.48 MB
+step 3600: train loss 0.6896, val loss 0.6866, memory 1302.48 MB
+step 3700: train loss 0.6944, val loss 0.6950, memory 1302.48 MB
+step 3800: train loss 0.6915, val loss 0.7016, memory 1302.48 MB
+step 3900: train loss 0.6980, val loss 0.6941, memory 1302.48 MB
+step 4000: train loss 0.6952, val loss 0.6925, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 01:55:45,337][absl][INFO] - Constructing tf.data.Dataset bridge for split train[23471:23472], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 4100: train loss 0.6842, val loss 0.6910, memory 1302.48 MB
+step 4200: train loss 0.6940, val loss 0.6927, memory 1302.48 MB
+step 4300: train loss 0.6933, val loss 0.6963, memory 1302.48 MB
+step 4400: train loss 0.6906, val loss 0.6985, memory 1302.48 MB
+step 4500: train loss 0.6919, val loss 0.6924, memory 1302.48 MB
+step 4600: train loss 0.6924, val loss 0.6930, memory 1302.48 MB
+step 4700: train loss 0.6909, val loss 0.6938, memory 1302.48 MB
+step 4800: train loss 0.6911, val loss 0.6969, memory 1302.48 MB
+step 4900: train loss 0.6950, val loss 0.6924, memory 1302.48 MB
+step 5000: train loss 0.6933, val loss 0.6917, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:05:22,697][absl][INFO] - Constructing tf.data.Dataset bridge for split train[21774:21775], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 5100: train loss 0.6962, val loss 0.6903, memory 1302.48 MB
+step 5200: train loss 0.6895, val loss 0.6872, memory 1302.48 MB
+step 5300: train loss 0.6928, val loss 0.6938, memory 1302.48 MB
+step 5400: train loss 0.6960, val loss 0.6903, memory 1302.48 MB
+step 5500: train loss 0.6936, val loss 0.6948, memory 1302.48 MB
+step 5600: train loss 0.6859, val loss 0.6872, memory 1302.48 MB
+step 5700: train loss 0.6991, val loss 0.6869, memory 1302.48 MB
+step 5800: train loss 0.6981, val loss 0.6980, memory 1302.48 MB
+step 5900: train loss 0.6945, val loss 0.7049, memory 1302.48 MB
+step 6000: train loss 0.6950, val loss 0.6961, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:15:01,043][absl][INFO] - Constructing tf.data.Dataset bridge for split train[12511:12512], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 6100: train loss 0.6943, val loss 0.7064, memory 1302.48 MB
+step 6200: train loss 0.6910, val loss 0.6912, memory 1302.48 MB
+step 6300: train loss 0.6995, val loss 0.6923, memory 1302.48 MB
+step 6400: train loss 0.6944, val loss 0.6881, memory 1302.48 MB
+step 6500: train loss 0.6934, val loss 0.6882, memory 1302.48 MB
+step 6600: train loss 0.6941, val loss 0.6851, memory 1302.48 MB
+step 6700: train loss 0.6877, val loss 0.6991, memory 1302.48 MB
+step 6800: train loss 0.6995, val loss 0.6911, memory 1302.48 MB
+step 6900: train loss 0.6889, val loss 0.6906, memory 1302.48 MB
+step 7000: train loss 0.6977, val loss 0.6955, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:24:40,236][absl][INFO] - Constructing tf.data.Dataset bridge for split train[11518:11519], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 7100: train loss 0.6914, val loss 0.6942, memory 1302.48 MB
+step 7200: train loss 0.6928, val loss 0.6961, memory 1302.48 MB
+step 7300: train loss 0.6883, val loss 0.6920, memory 1302.48 MB
+step 7400: train loss 0.6998, val loss 0.6891, memory 1302.48 MB
+step 7500: train loss 0.6884, val loss 0.6864, memory 1302.48 MB
+step 7600: train loss 0.6916, val loss 0.6896, memory 1302.48 MB
+step 7700: train loss 0.6940, val loss 0.6935, memory 1302.48 MB
+step 7800: train loss 0.6938, val loss 0.6993, memory 1302.48 MB
+step 7900: train loss 0.6882, val loss 0.6892, memory 1302.48 MB
+step 8000: train loss 0.6941, val loss 0.6981, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:34:20,532][absl][INFO] - Constructing tf.data.Dataset bridge for split train[5418:5419], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 8100: train loss 0.6873, val loss 0.6873, memory 1302.48 MB
+step 8200: train loss 0.6948, val loss 0.6894, memory 1302.48 MB
+/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/bin/python /home/ben/Documents/Projects/ift6163/robot_learning_2026/push_to_hub.py
+step 8300: train loss 0.6972, val loss 0.6922, memory 1302.48 MB
+/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/bin/python /home/ben/Documents/Projects/ift6163/robot_learning_2026/push_to_hub.py
+
+
+step 8400: train loss 0.6947, val loss 0.6939, memory 1302.48 MB
+step 8500: train loss 0.6924, val loss 0.6893, memory 1302.48 MB
+step 8600: train loss 0.6857, val loss 0.6897, memory 1302.48 MB
+step 8700: train loss 0.6958, val loss 0.6897, memory 1302.48 MB
+step 8800: train loss 0.6912, val loss 0.6898, memory 1302.48 MB
+step 8900: train loss 0.7019, val loss 0.6968, memory 1302.48 MB
+step 9000: train loss 0.6915, val loss 0.6889, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:44:01,660][absl][INFO] - Constructing tf.data.Dataset bridge for split train[6697:6698], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+step 9100: train loss 0.6972, val loss 0.6902, memory 1302.48 MB
+step 9200: train loss 0.6922, val loss 0.6928, memory 1302.48 MB
+step 9300: train loss 0.6923, val loss 0.6927, memory 1302.48 MB
+step 9400: train loss 0.6962, val loss 0.6915, memory 1302.48 MB
+step 9500: train loss 0.6953, val loss 0.6940, memory 1302.48 MB
+step 9600: train loss 0.6905, val loss 0.6903, memory 1302.48 MB
+step 9700: train loss 0.6998, val loss 0.6870, memory 1302.48 MB
+step 9800: train loss 0.6943, val loss 0.7023, memory 1302.48 MB
+step 9900: train loss 0.6930, val loss 0.6948, memory 1302.48 MB
+step 10000: train loss 0.6971, val loss 0.6906, memory 1302.48 MB
+Model saved to ./miniGRP.pth
+Loading dataset: gs://gresearch/robotics/bridge/0.1.0/
+ size_  25460  total samples to fetch 1  chunk_size  1
+[2026-01-28 02:53:43,356][absl][INFO] - Constructing tf.data.Dataset bridge for split train[16674:16675], from gs://gresearch/robotics/bridge/0.1.0/
+A terminé le mélange.
+^CTraceback (most recent call last):
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/mini-grp/mini_grp.py", line 140, in <module>
+    results = my_main()
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/main.py", line 90, in decorated_main
+    _run_hydra(
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/_internal/utils.py", line 389, in _run_hydra
+    _run_app(
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/_internal/utils.py", line 452, in _run_app
+    run_and_report(
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/_internal/utils.py", line 213, in run_and_report
+    return func()
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/_internal/utils.py", line 453, in <lambda>
+    lambda: hydra.run(
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/roble/lib/python3.10/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/mini-grp/mini_grp.py", line 121, in my_main
+    xb, xp, xg, xgi, yb = cBuffer.get_batch_grp('train', cfg, cfg.batch_size)
+  File "/home/ben/Documents/Projects/ift6163/robot_learning_2026/mini-grp/mini_shuffel_buffer.py", line 230, in get_batch_grp
+    obs_ = data["img"][ix].to(torch.float).unsqueeze(1).permute(0, 1, 4, 2, 3) # Convert to [B, T, C, H, W] format for torchvision transforms, and back.
+KeyboardInterrupt
+^CException ignored in: <module 'threading' from '/usr/lib/python3.10/threading.py'>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1567, in _shutdown
+    lock.acquire()
+KeyboardInterrupt: 
+wandb: Waiting for W&B process to finish... (failed 255).
+wandb:                                                                                
+wandb: 
+wandb: Run history:
+wandb: buffer_size ▁▁▁▁▁▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▆▇▇▇▇████████
+wandb:      memory ▁███████████████████████████████████████
+wandb:  train loss █▆▄▃▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:    val loss █▆▄▃▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb: 
+wandb: Run summary:
+wandb: buffer_size 3.85584
+wandb:      memory 1302.47629
+wandb:  train loss 0.69707
+wandb:    val loss 0.69056
+wandb: 
+wandb: You can sync this run to the cloud by running:
+wandb: wandb sync /home/ben/Documents/Projects/ift6163/robot_learning_2026/outputs/2026-01-28/01-10-29/wandb/offline-run-20260128_011032-tqdkmmf6

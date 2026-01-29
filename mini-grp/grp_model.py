@@ -400,7 +400,11 @@ def estimate_loss(model, dataset):
         losses = torch.zeros(model._cfg.eval_iters)
         for k in range(model._cfg.eval_iters):
             X, x_pose, x_goal, x_goal_img, Y = dataset.get_batch_grp(split, model._cfg, model._cfg.batch_size)
-            logits, loss = model(X, x_goal, x_goal_img, Y, pose=x_pose)
+            # Match training-time masking behavior (if enabled)
+            mask_ = None
+            if model._cfg.policy.random_masking_enabled:
+                mask_ = (np.random.rand() < 0.5)
+            logits, loss = model(X, x_goal, x_goal_img, Y, pose=x_pose, mask_=mask_)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()

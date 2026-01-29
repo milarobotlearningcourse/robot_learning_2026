@@ -6,6 +6,7 @@ from omegaconf import DictConfig, OmegaConf
 import threading
 from queue import Queue
 import torch
+import numpy as np
 
 def get_inverse_sqrt_lambda(optimizer, warmup_steps):
     """
@@ -104,7 +105,7 @@ def my_main(cfg: DictConfig):
         lr_lambda = get_inverse_sqrt_lambda(optimizer, warmup_steps=2000)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
-    if "simple_env" in cfg.simEval:
+    if "simpler_env" in cfg.simEval:
         import simpler_env
         task_name = "widowx_carrot_on_plate"  # @param ["google_robot_pick_coke_can", "google_robot_move_near", "google_robot_open_drawer", "google_robot_close_drawer", "widowx_spoon_on_towel", "widowx_carrot_on_plate", "widowx_stack_cube", "widowx_put_eggplant_in_basket"]
         if 'env' in locals():
@@ -143,7 +144,7 @@ def my_main(cfg: DictConfig):
             print("Model saved to " + path_)
         
         if cfg.simEval and (iter % cfg.eval_vid_iters == 0) and (iter !=0): ## Do this eval infrequently because it takes a fiar bit of compute
-            if "simple_env" in cfg.simEval:
+            if "simpler_env" in cfg.simEval:
                 # Note: moved import of `eval_model_in_sim` into `my_main` to avoid circular imports
                 eval_model_in_sim(cfg, model, cfg.device, log_dir, env, env_unwrapped, 
                             wandb=wandb, iter_=iter, tokenizer=tokenizer, text_model=text_model)
@@ -159,7 +160,11 @@ def my_main(cfg: DictConfig):
         xb, xp, xg, xgi, yb = cBuffer.get_batch_grp('train', cfg, cfg.batch_size)
 
         # evaluate the loss
-        logits, loss = model(xb, xg, xgi, yb, pose=xp)
+        # Block masking: train with either text OR image goals (randomly) if enabled.
+        mask_ = None
+        if cfg.policy.random_masking_enabled:
+            mask_ = (np.random.rand() < 0.5)  # True -> mask goal image tokens (use text); False -> mask text (use image)
+        logits, loss = model(xb, xg, xgi, yb, pose=xp, mask_=mask_)
         
         # backward pass
         loss.backward()

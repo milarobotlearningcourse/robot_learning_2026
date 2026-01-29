@@ -2,8 +2,8 @@ import os
 from huggingface_hub import HfApi, login, HfFolder
 
 # Path to the model and config
-MODEL_PATH = "/home/ben/Documents/Projects/ift6163/robot_learning_2026/outputs/2026-01-28/01-10-29/miniGRP.pth"
-CONFIG_PATH = "/home/ben/Documents/Projects/ift6163/robot_learning_2026/outputs/2026-01-28/01-10-29/.hydra/config.yaml"
+MODEL_PATH = "/home/ben/Documents/Projects/ift6163/robot_learning_2026/outputs/2026-01-29/02-34-11/miniGRP.pth"
+CONFIG_PATH = "/home/ben/Documents/Projects/ift6163/robot_learning_2026/outputs/2026-01-29/02-34-11/.hydra/config.yaml"
 CODE_PATH = "/home/ben/Documents/Projects/ift6163/robot_learning_2026/mini-grp/grp_model.py"
 
 def push_model():
@@ -52,6 +52,9 @@ def push_model():
             repo_id=repo_id,
             repo_type="model"
         )
+    else:
+        print(f"Error: Config file not found at {CONFIG_PATH}")
+        return
 
     if os.path.exists(CODE_PATH):
         print(f"Uploading {CODE_PATH}...")
@@ -61,6 +64,9 @@ def push_model():
             repo_id=repo_id,
             repo_type="model"
         )
+    else:
+        print(f"Error: Code file not found at {CODE_PATH}")
+        return
     
     print(f"Upload complete! View your model at https://huggingface.co/{repo_id}")
 

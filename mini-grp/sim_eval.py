@@ -155,10 +155,10 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
         #               wandb, iter_, tokenizer=None, text_model=None):
     
     from libero.libero import benchmark
-    from libero.libero.envs import OffScreenRenderEnv, DenseRewardEnv
+    from libero.libero.envs import OffScreenRenderEnv
     import os
     from libero.libero.utils import get_libero_path
-    from gymnasium.wrappers import FrameStackObservation
+    from gymnasium.wrappers import FrameStack
     from einops import rearrange
     from collections import deque
 
@@ -183,12 +183,12 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
             "camera_heights": 128,
             "camera_widths": 128
         }
-        env = DenseRewardEnv(**env_args)
+        env = OffScreenRenderEnv(**env_args)
         env.seed(0)
         init_states = task_suite.get_task_init_states(task_id) # for benchmarking purpose, we fix the a set of initial states
         init_state_id = 0
         env.set_init_state(init_states[init_state_id])
-        env = FrameStackObservation(DictWrapper(env, obs_key="agentview_image"), cfg.policy.obs_stacking) ## Stacking the observations
+        env = FrameStack(DictWrapper(env, obs_key="agentview_image"), cfg.policy.obs_stacking) ## Stacking the observations
         obs, info = env.reset()
         # obs_hist = deque(maxlen=cfg.policy.obs_stacking)
         # for _ in range(cfg.policy.obs_stacking):

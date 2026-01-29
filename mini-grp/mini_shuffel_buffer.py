@@ -217,7 +217,7 @@ class CircularBuffer:
 
         cfg.action_dim = len(cfg.dataset.action_mean)
 
-        self._dataset_indecies = self._cfg.dataset.dataset_indicies
+        self._dataset_indicies = self._cfg.dataset.dataset_indicies
         start_ = time.time()
         if self._cfg.dataset.load_dataset is True:
             # Load the dataset from a file
@@ -347,8 +347,19 @@ class CircularBuffer:
         # data = dataset['train'] if split == 'train' else dataset['test']
         data = self._dataset_tmp
         
-        ## Randomly sample indices for the batch but account for action stacking past the index and obs_stacking before the index.
-        ix = np.random.randint(min(self._count, self._size)-((cfg.policy.action_stacking + cfg.policy.obs_stacking)-1), size=(batch_size,))
+        ## Randomly sample indices for the batch but account for:
+        ## - obs_stacking history BEFORE the index (avoid negative indexing)
+        ## - action_stacking horizon AFTER the index (avoid running past the buffer end)
+        n = min(self._count, self._size)
+        min_ix = cfg.policy.obs_stacking - 1
+        # We will access actions at ix ... ix + (action_stacking - 1)
+        max_ix_inclusive = n - cfg.policy.action_stacking
+        if max_ix_inclusive < min_ix:
+            raise ValueError(
+                f"Not enough data for obs_stacking={cfg.policy.obs_stacking} and "
+                f"action_stacking={cfg.policy.action_stacking}: n={n}"
+            )
+        ix = np.random.randint(min_ix, max_ix_inclusive + 1, size=(batch_size,))
         
         obs_ = data["img"][ix-cfg.policy.obs_stacking+1].to(torch.float).unsqueeze(1) # Convert to [B, T, C, H, W] format for torchvision transforms, and back.
         for i in range(1, cfg.policy.obs_stacking): ## This is slow but works.
@@ -366,13 +377,12 @@ class CircularBuffer:
         x_goal_img = self._model.normalize_state(transform_crop_scale(data["goal_img"][ix].to(torch.float))) ## [B, C, H,  W]
         x_goal_img = x_goal_img # Convert to [B, H, W, C] format from torchvision.
     
-        # TODO: 
-        ## Provide the block masking logic for the attention head
-        y = self._model.encode_action(data["action"][ix + cfg.policy.obs_stacking - 1])
+        # Targets: predict action(s) aligned with the *latest* stacked observation at index ix.
+        y = self._model.encode_action(data["action"][ix])
         if cfg.policy.action_stacking > 1:
-            ## Stack the next cfg.policy.action_stacking actions together
-            for i in range(1, cfg.policy.action_stacking): ## This is slow but works.
-                y = torch.cat((y, self._model.encode_action(data["action"][ix + i])), axis=1) ## stack on time timension.
+            ## Stack the next cfg.policy.action_stacking-1 actions onto the feature dimension.
+            for i in range(1, cfg.policy.action_stacking):  ## This is slow but works.
+                y = torch.cat((y, self._model.encode_action(data["action"][ix + i])), axis=1)
         
         return x, pose, x_goal, x_goal_img, y
     
