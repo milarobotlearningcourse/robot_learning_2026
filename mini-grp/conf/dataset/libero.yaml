@@ -1,4 +1,4 @@
-to_name: gberseth/libero-data-no-noops-64px # https://huggingface.co/datasets/gberseth/libero-data-64px-full
+to_name: gberseth/libero_spatial_0 # https://huggingface.co/datasets/gberseth/libero-data-64px-full
 num_episodes: 0
 chunk_size: 100
 buffer_size: 50000
@@ -13,6 +13,7 @@ load_dataset: true
 download_all: false
 save_initial_dataset: false
 use_generator: false
+use_init_state: true
 dataset_indicies: {
   # "/network/datasets/openxembodiment/datasets/bridge/0.1.0/": {"start": 11, size: 28935, weight: 0.3, dataset_key: "bridge_oxe", scale: 1.0},
   # "/network/datasets/openxembodiment/datasets/stanford_robocook_converted_externally_to_rlds/0.1.0": {"start": 0, size: 1000000, weight: 0.3, dataset_key: "stanford_robocook_converted_externally_to_rlds", scale: 1.0},
@@ -25,41 +26,13 @@ dataset_indicies: {
   # "/network/datasets/openxembodiment/datasets/kuka/0.1.0": {"start": 0, size: 1000000, weight: 0.5, "image_key": "image", "text_key": "natural_language_instruction", "action_key": "gripper_closedness_action", scale: 0.1},  
   # "/network/datasets/openxembodiment/datasets/utokyo_saytap_converted_externally_to_rlds/0.1.0/": {"start": 11, size: 28935, weight: 0.3, dataset_key: "saytap", scale: 1.0},
 }
-
-"action_std": [
-  0.3124798834323883,
-  0.37134110927581787,
-  0.4139348864555359,
-  0.04684387892484665,
-  0.06005333364009857,
-  0.08120378851890564,
-  0.4986436367034912
-]
-"action_mean": [
-  0.044201772660017014,
-  0.03035518154501915,
-  -0.10015746206045151,
-  0.005030587315559387,
-  0.002572480821982026,
-  -0.005025846417993307,
-  0.536292552947998
-]
+recompute_normalizations: false
 "action_scaling": 0.5,
-"state_mean": [
-  -0.0011230926513074045,
-  -0.0002634865379064686,
-  0.0006436482461208708,
-  0.00027720820152258874,
-  -0.0005974869737108643,
-  0.00018720179682490902,
-  0.625765860080719
-]
-"state_std": [
-  0.012801983393728733,
-  0.019161013886332512,
-  0.016479915007948875,
-  0.00027720820152258874,
-  -0.0005974869737108643,
-  0.00018720179682490902,
-  0.625765860080719
-]
+"action_mean": [0.20769862830638885, 0.1172831580042839, -0.1328626126050949, 0.006111515685915947, -0.0030502916779369116, -0.036297377198934555, 0.0]
+"action_std": [0.6475179195404053, 0.3413824141025543, 0.8427339792251587, 0.04650535434484482, 0.09098237007856369, 0.0969737097620964, 1.4071979522705078]
+"pose_mean": [-0.025086650624871254, 0.13407054543495178, 1.0256017446517944, 0.9899610877037048, -0.09843368083238602, -0.023222042247653008, 0.02138819918036461]
+"pose_std": [0.12043842673301697, 0.07237331569194794, 0.12468966096639633, 0.01539379358291626, 0.13247355818748474, 0.02883189357817173, 0.023439111188054085]
+# "action_mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+# "action_std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+# "pose_mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+# "pose_std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

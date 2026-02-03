@@ -68,6 +68,8 @@ WORKDIR /playground
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+RUN python -c "import libero"
+
 ## Install pytorch and cuda
 RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
@@ -113,17 +115,20 @@ libgles2-mesa-dev \
 libgbm-dev \
 build-essential \
 && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/montrealrobotics/LIBERO.git
+# RUN git clone https://github.com/montrealrobotics/LIBERO.git
 # COPY --link ./LIBERO /playground/LIBERO
-RUN pip install -r ./LIBERO/requirements.txt
-RUN pip install -e ./LIBERO 
+# RUN pip install -r ./LIBERO/requirements.txt
+# RUN pip install -e ./LIBERO 
 ## Check that libero is installed and easy to load
-RUN python -c "import libero"
 
 
 ## Check the file were copied
 RUN ls
 COPY --link . /playground
+# RUN pip install -e ./LIBERO 
+# RUN git clone https://github.com/montrealrobotics/LIBERO.git
+# # COPY --link ./LIBERO /playground/LIBERO
+# RUN pip install -r ./LIBERO/requirements.txt
 # RUN pip install -e ./LIBERO 
 
 ENTRYPOINT [ "python" ]
