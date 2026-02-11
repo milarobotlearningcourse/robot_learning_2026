@@ -1,5 +1,6 @@
 
 import dill
+import h5py
 import numpy as np
 import torch
 
@@ -49,6 +50,7 @@ def eval_model_in_sim(cfg, model, device, log_dir, env, env_unwrapped,
         obs, reset_info = env.reset()
         obs_ = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)[:,:,:3]
         obs_hist = deque(maxlen=cfg.policy.obs_stacking)
+        last_action = np.zeros(cfg.action_dim)  # Track last action taken
         for _ in range(cfg.policy.obs_stacking):
             obs_hist.append(obs_)
         instruction = env_unwrapped.get_language_instruction()
@@ -67,14 +69,22 @@ def eval_model_in_sim(cfg, model, device, log_dir, env, env_unwrapped,
 
             obs_state = torch.tensor(model.preprocess_state(image), dtype=torch.float32)
             goal_state = torch.tensor(model.preprocess_goal_image(image[:,:,:3]), dtype=torch.float32)
+            
+            # Prepare last_action tensor if available
+            last_action_tensor = None
+            if last_action is not None:
+                last_action_tensor = torch.tensor(last_action[:cfg.action_dim], dtype=torch.float32).unsqueeze(0).to(device)
+            
             action, loss = model.forward(torch.tensor(obs_state.unsqueeze(0), dtype=torch.float32).to(device)
                                 ,torch.tensor(txt_goal).to(device)
                                 ,torch.tensor(goal_state.unsqueeze(0), dtype=torch.float32).to(device),
                                 mask_=True, ## Masks goal image
                                 pose=torch.tensor([[obs["extra"]["tcp_pose"]]], dtype=torch.float32).to(device),
+                                last_action=last_action_tensor,
                                 )
 
             action = model.decode_action(action[0]).cpu().detach().numpy() ## Add in the gripper close action
+            last_action = action.copy()  # Store for next iteration
             ## If the actions are stacked into a longer vector execute the sequence of actions
             for step_ in range(cfg.policy.action_stacking):
                 act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
@@ -123,7 +133,7 @@ class DictWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box( 
             low=0,
             high=255,
-            shape=(128,128,3),  # Assuming the observation is an image of size 128x128 with 3 color channels
+            shape=(256,256,3),  # Assuming the observation is an image of size 256x256 with 3 color channels
             dtype=np.uint8)
         self._obs_key = obs_key
 
@@ -164,8 +174,19 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
 
 
     benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite_name = "libero_90" # can also choose libero_spatial, libero_object, etc.
+    task_suite_name = cfg.sim.task_set # can also choose libero_spatial, libero_object, etc.
     task_suite = benchmark_dict[task_suite_name]()
+    
+    # Load initial states and goal images from Hugging Face dataset if provided
+    init_states_dataset = None
+    if hasattr(cfg.sim, 'libero_init_state_hf_repo') and cfg.sim.libero_init_state_hf_repo:
+        print(f"Loading initial states from Hugging Face: {cfg.sim.libero_init_state_hf_repo}")
+        from datasets import load_dataset
+        init_states_dataset = load_dataset(cfg.sim.libero_init_state_hf_repo, split='train')
+        print(f"Loaded dataset with {len(init_states_dataset)} entries")
+    elif hasattr(cfg.sim, 'libero_init_state_file') and cfg.sim.libero_init_state_file:
+        print(f"Loading initial states from HDF5: {cfg.sim.libero_init_state_file}")
+        init_states_dataset = h5py.File(hydra.utils.get_original_cwd()+cfg.sim.libero_init_state_file, 'r')
 
     # retrieve a specific task
     tasks = cfg.sim.eval_tasks
@@ -180,91 +201,179 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
         # step over the environment
         env_args = {
             "bddl_file_name": task_bddl_file,
-            "camera_heights": 128,
-            "camera_widths": 128
+            "camera_heights": 256,
+            "camera_widths": 256
         }
-        env = OffScreenRenderEnv(**env_args)
+        env = DenseRewardEnv(**env_args) # env = OffScreenRenderEnv(**env_args)
         env.seed(0)
-        init_states = task_suite.get_task_init_states(task_id) # for benchmarking purpose, we fix the a set of initial states
-        init_state_id = 0
-        env.set_init_state(init_states[init_state_id])
-        env = FrameStack(DictWrapper(env, obs_key="agentview_image"), cfg.policy.obs_stacking) ## Stacking the observations
-        obs, info = env.reset()
-        # obs_hist = deque(maxlen=cfg.policy.obs_stacking)
-        # for _ in range(cfg.policy.obs_stacking):
-        #     obs_hist.append(obs)
-
-        mask = get_blocked_mask(cfg, targets=None, T=0) ## Get the blocked mask
         
-        txt_goal = get_text_tokens(cfg, tokenizer, text_model, instruction, model=model)
-        image_goal = obs.reshape((128, 128, 3*cfg.policy.obs_stacking))[:,:,:3] ## Assuming the observation is an image of size 128x128 with 3 color channels
-        frames = []
-        rewards = []
-        infos = []
-        done, truncated, timeLimit, t, wait_steps = False, False, 400, 0, 10
-        while not (done or truncated or (t > (timeLimit + wait_steps))):
-            ## Reshape the image to the correct size and stack the hostory on the last channel dimension
-            # image = obs[0]
-            if t < wait_steps: ## let object stabalize before acting.
-                obs, reward, done, truncated, info = env.step([0,0,0,0,0,0,-1])
-                # obs_hist.append(obs)
-                t += 1
-                continue
-            # obs = obs.reshape((128, 128, 3*cfg.policy.obs_stacking)) ## Assuming the observation is an image of size 128x128 with 3 color channels  
-            obs = rearrange(obs, 't h w c -> h w (t c)', c=3, t=cfg.policy.obs_stacking) ## Rearranging the image to have the stacked history in the last channel dimension
-            # image = obs[:,:,:3] ## Remove the last dimension of the image color
-            obs_state = model.preprocess_state(obs)
-            goal_state = model.preprocess_goal_image(image_goal)
-            action, loss = model.forward(torch.tensor(np.array([obs_state])).to(device)
-                        ,torch.tensor(txt_goal).to(device)
-                        ,torch.tensor(np.array([goal_state])).to(device), ## Not the correct goal image... Should mask this.
-                        mask_=True,
-                        pose=torch.tensor([[np.concatenate( (info["robot0_eef_pos"], 
-                                                           info["robot0_eef_quat"][:3],
-                                                            [(info["robot0_gripper_qpos"][0] - info["robot0_gripper_qpos"][0]) < 0.005 ]), axis=-1)]], dtype=torch.float32).to(device),
-                        # morphology=torch.tensor([0], dtype=torch.uint8).to(device) ## Morphology is 0 for arm, 1 for A1}
-                        )
+        # Load initial states from dataset if available, otherwise use default
+        task_description = instruction.replace(" ", "_")
+        task_demos = None
+        if init_states_dataset is not None:
+            if isinstance(init_states_dataset, h5py.File):
+                # HDF5 format
+                if task_description in init_states_dataset:
+                    task_grp = init_states_dataset[task_description]
+                    num_init_states = len(task_grp.keys())
+                    print(f"Loaded {num_init_states} initial states from HDF5 for task: {task_description}")
+                else:
+                    task_grp = None
+                    init_states = task_suite.get_task_init_states(task_id)
+                    num_init_states = len(init_states)
+                    print(f"Using default initial states for task: {task_description}")
+            else:
+                # Hugging Face dataset format
+                task_demos = [item for item in init_states_dataset if item.get('task_description') == task_description]
+                num_init_states = len(task_demos)
+                if num_init_states > 0:
+                    print(f"Loaded {num_init_states} initial states from HF dataset for task: {task_description}")
+                else:
+                    init_states = task_suite.get_task_init_states(task_id)
+                    num_init_states = len(init_states)
+                    print(f"Using default initial states for task: {task_description}")
+        else:
+            init_states = task_suite.get_task_init_states(task_id) # for benchmarking purpose, we fix the a set of initial states
+            num_init_states = len(init_states)
+            print(f"Using default initial states for task: {task_description}")
+        
+        # for init_state_id in range(len(init_states)):
+        for init_state_id in range(min(2, num_init_states)):  ## Just do a couple different initializations for eval
+            # Load init_state and goal_img from dataset or use default
+            if init_states_dataset is not None:
+                if isinstance(init_states_dataset, h5py.File):
+                    # HDF5 format
+                    if task_grp is not None:
+                        demo_key = f"demo_{init_state_id}"
+                        if demo_key in task_grp:
+                            init_state = task_grp[demo_key]['init_state'][()]
+                            goal_img = task_grp[demo_key]['goal_img'][()] if 'goal_img' in task_grp[demo_key] else None
+                            print(f"Loaded init_state and goal_img from HDF5 for {demo_key}")
+                        else:
+                            init_state = init_states[init_state_id]
+                            goal_img = None
+                    else:
+                        init_state = init_states[init_state_id]
+                        goal_img = None
+                else:
+                    # Hugging Face dataset format
+                    if task_demos and init_state_id < len(task_demos):
+                        demo = task_demos[init_state_id]
+                        init_state = np.array(demo['init_state'])
+                        goal_img = np.array(demo['goal_img']) if 'goal_img' in demo and demo['goal_img'] is not None else None
+                        print(f"Loaded init_state and goal_img from HF dataset for demo {init_state_id}")
+                    else:
+                        init_state = init_states[init_state_id]
+                        goal_img = None
+            else:
+                init_state = init_states[init_state_id]
+                goal_img = None
+            
+            env.reset()
+            env.set_init_state(init_state)
+            env_ = FrameStackObservation(DictWrapper(env, obs_key="agentview_image"), cfg.policy.obs_stacking) ## Stacking the observations
+            obs, info = env_.reset()
 
-            action = model.decode_action(action[0]).cpu().detach().numpy() ## Add in the gripper close action
-            ## If the actions are stacked into a longer vector execute the sequence of actions
-            for step_ in range(cfg.policy.action_stacking):
-                act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
-                ## Need to process LIBERO gripper action [0, 1] -> [-1, 1], then invert, https://github.com/moojink/openvla-oft/blob/e4287e94541f459edc4feabc4e181f537cd569a8/experiments/robot/libero/run_libero_eval.py#L265
-                act_[6] = ((act_[6] - 0.5) * 2) * -1.0
+            mask = get_blocked_mask(cfg, targets=None, T=0) ## Get the blocked mask
+            
+            txt_goal = get_text_tokens(cfg, tokenizer, text_model, instruction, model=model)
+            
+            # Use goal image from HDF5 if available, otherwise use first observation
+            if goal_img is not None:
+                image_goal = goal_img
+                print(f"Using goal image from HDF5, shape: {image_goal.shape}")
+            else:
+                image_goal = obs.reshape((256, 256, 3*cfg.policy.obs_stacking))[:,:,:3]
+                print("Using first observation as goal image")
+            frames = []
+            rewards = []
+            infos = []
+            last_action = np.zeros(cfg.action_dim)  # Track last action taken
+            done, truncated, timeLimit, t, wait_steps = False, False, 400, 0, 00
 
-                obs, reward, done, truncated, info = env.step(act_)
-                # image = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)
-                # image = image[:,:,:3] ## Remove last dimension of image color
-                # Store the original image for video before stacking/processing
-                image = obs[0]
-                frames.append(image)
-                # reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
-                rewards.append(reward)
-                infos.append(info)
-                t=t+1   
-                if done or truncated:
+            while not (done or truncated or (t > (timeLimit + wait_steps))):
+                ## Reshape the image to the correct size and stack the hostory on the last channel dimension
+                # image = obs[0]
+                if t < wait_steps: ## let object stabalize before acting.
+                    obs, reward, done, truncated, info = env_.step([0,0,0,0,0,0,0])
+                    t += 1
+                    continue
+                # obs = obs.reshape((128, 128, 3*cfg.policy.obs_stacking)) ## Assuming the observation is an image of size 128x128 with 3 color channels  
+                obs = rearrange(obs, 't h w c -> h w (t c)', c=3, t=cfg.policy.obs_stacking) ## Rearranging the image to have the stacked history in the last channel dimension
+                # image = obs[:,:,:3] ## Remove the last dimension of the image color
+                obs_state = model.preprocess_state(obs)
+                goal_state = model.preprocess_goal_image(image_goal)
+                pose_ = model.encode_pose(torch.tensor([np.concatenate( 
+                                (info["robot0_eef_pos"], 
+                                info["robot0_eef_quat"][:3],
+                                [(info["robot0_gripper_qpos"][0])]), axis=-1)], dtype=torch.float32)).to(device)
+ 
+                # Prepare last_action tensor if available  
+                last_action_tensor = None
+                if last_action is not None:
+                    last_action_tensor = model.encode_action(torch.tensor([last_action[:cfg.action_dim]], dtype=torch.float32)).to(device)
+                
+                action, loss = model.forward(torch.tensor(np.array([obs_state])).to(device)
+                            ,torch.tensor(txt_goal).to(device)
+                            ,torch.tensor(np.array([goal_state])).to(device), 
+                            mask_=True,
+                            pose=pose_,
+                            last_action=last_action_tensor,
+                            )
+
+                action = model.decode_action(action[0]).cpu().detach().numpy()
+                last_action = action.copy()  # Store for next iteration 
+                ## If the actions are stacked into a longer vector execute the sequence of actions
+                for step_ in range(cfg.policy.action_stacking):
+                    act_ = action[cfg.action_dim*step_:(cfg.action_dim*(step_+1))]
+                    ## Need to process LIBERO gripper action [0, 1] -> [-1, 1], then invert, https://github.com/moojink/openvla-oft/blob/e4287e94541f459edc4feabc4e181f537cd569a8/experiments/robot/libero/run_libero_eval.py#L265
+                    ## If the model is the RepayModel don't do this conversion
+                    # if not hasattr(model, 'trajectory_loaded'):
+                    # act_[6] = ((act_[6] - 0.5) * 2) # * -1.0
+
+                    obs, reward, done, truncated, info = env_.step(act_)
+                    # image = get_image_from_maniskill2_obs_dict(env_unwrapped, obs)
+                    # image = image[:,:,:3] ## Remove last dimension of image color
+                    # Store the original image for video before stacking/processing
+                    image = obs[0]
+                    frames.append(image)
+                    # reward = -(np.linalg.norm(info["eof_to_obj1_diff"]) + np.linalg.norm(info["eof_to_obj1_diff"])) ## Use a shaped reward as distance between gripper and objects
+                    rewards.append(reward)
+                    infos.append(info)
+                    t=t+1   
+                    # print(f"Step {t}, reward: {reward:.4f}, done: {done}, truncated: {truncated}")
+                    if done or truncated:
+                        print("Episode finished with success after {} timesteps".format(step_))
+                        break
+                if done:
+                    print("Episode finished with success after {} timesteps".format(step_))
                     break
-            if done:
-                print("Episode finished after {} timesteps".format(step_))
-                break
-
-        print(f"avg reward {np.mean(rewards):.8f}")
-        if not cfg.testing:
-            wandb.log({"avg reward_"+str(task_id): np.mean(rewards)})
-        import os
-        path_ = os.path.join(log_dir, f"libero-{iter_}.mp4")
-        import imageio
-        imageio.mimsave(path_, frames, fps=20)
-        if not cfg.testing:
-            wandb.log({"example": wandb.Video(path_)})
-        env.close()
+            
+            import os
+            path_ = os.path.join(log_dir, f"libero-{iter_}-task-id-{task_id}-init-id-{init_state_id}.mp4")
+            import imageio
+            imageio.mimsave(path_, frames, fps=20)
+    episode_stats = info.get('episode_stats', {})
+    episode_stats['rewards'] = np.mean(rewards) 
+    print(f"avg reward {np.mean(rewards):.8f}")
+    if not cfg.testing:
+        wandb.log({"avg reward_"+str(task_id): np.mean(rewards)})
+    if not cfg.testing:
+        wandb.log({"example": wandb.Video(path_)})
+    env.close()
+    
+    # Close HDF5 file if it was opened
+    if init_states_dataset is not None and isinstance(init_states_dataset, h5py.File):
+        init_states_dataset.close()
+        print("Closed HDF5 file")
+    
+    return episode_stats
 
 import hydra
 from omegaconf import DictConfig
 
 @hydra.main(config_path="./conf", config_name="64pix-pose")
 def my_main(cfg: DictConfig):
-    from mini_shuffel_buffer import CircularBuffer
     import torch
     # ------------
     # Train and test splits
@@ -276,8 +385,17 @@ def my_main(cfg: DictConfig):
     # model_ = torch.load("/home/gberseth/playground/mini_grp/miniGRP.pth")
     model_dir = hydra.utils.get_original_cwd()+"/mini-grp/miniGRP.pth"
     print ("Loading model from:", model_dir)
-    from grp_model import GRP
-    model_ = torch.load(model_dir, pickle_module=dill)
+    if "dataset" == cfg.model.type:
+        ## load the dataset
+        from mini_shuffel_buffer import CircularBuffer
+        from mock_grp_model import ReplayModel
+        cfg.dataset.load_dataset = True
+        model_ = ReplayModel(cfg)
+        dataset_buffer = CircularBuffer(cfg.dataset.buffer_size, cfg, model=model_)
+        model_.set_dataset(dataset_buffer)
+    else:
+        from grp_model import GRP
+        model_ = torch.load(model_dir, pickle_module=dill)
     # model_._cgf = cfg
 
     tokenizer = None

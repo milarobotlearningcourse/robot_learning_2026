@@ -24,20 +24,6 @@ def get_inverse_sqrt_lambda(optimizer, warmup_steps):
             return float(warmup_steps) / float(current_step)**0.5
     return lr_lambda
 
-def get_linear_lambda(optimizer, warmup_steps, total_steps):
-    """
-    Creates a lambda function for a linear learning rate schedule 
-    with a linear warmup phase and linear decay to zero.
-    """
-    def lr_lambda(current_step):
-        # Linear warmup phase
-        if current_step < warmup_steps:
-            return float(current_step) / float(warmup_steps)
-        # Linear decay phase
-        else:
-            return max(0.0, float(total_steps - current_step) / float(max(1, total_steps - warmup_steps)))
-    return lr_lambda
-
 @hydra.main(config_path="./conf", config_name="64pix-pose")
 def my_main(cfg: DictConfig):
     torch.manual_seed(cfg.r_seed)
@@ -77,6 +63,11 @@ def my_main(cfg: DictConfig):
         from grp_convnet import estimate_loss
         model = GRPConvNet(cfg)
         print(f"Using ConvNet model")
+    if cfg.model.type == "dense":
+        from grp_convnet import PoseOnlyNet
+        from grp_convnet import estimate_loss
+        model = PoseOnlyNet(cfg)
+        print(f"Using Dense model")
     else:
         from grp_model import GRP
         from grp_model import estimate_loss
@@ -102,7 +93,7 @@ def my_main(cfg: DictConfig):
         from torch.optim.lr_scheduler import LinearLR
         scheduler = LinearLR(optimizer, start_factor=1.0, end_factor=0.1, total_iters=cfg.max_iters)
     else:  # inverse_sqrt
-        lr_lambda = get_inverse_sqrt_lambda(optimizer, warmup_steps=2000)
+        lr_lambda = get_inverse_sqrt_lambda(optimizer, warmup_steps=1000)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     if "simpler_env" in cfg.simEval:
@@ -126,10 +117,10 @@ def my_main(cfg: DictConfig):
         profiler = cProfile.Profile()
         profiler.enable()
 
-    for iter in range(cfg.max_iters):
+    for iter in range(cfg.max_iters+1):
         if iter % cfg.eval_interval == 0 or iter == cfg.max_iters - 1:
             losses = estimate_loss(model, cBuffer)
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, memory {torch.cuda.memory_allocated(cfg.device) / 1e6:.2f} MB")
+            print(f"step {iter}: train loss {losses['train']:.6f}, val loss {losses['val']:.6f}, memory {torch.cuda.memory_allocated(cfg.device) / 1e6:.2f} MB")
             if not cfg.testing:
                 wandb.log({"train loss": losses['train'], "val loss": losses['val'],
                         "memory": torch.cuda.memory_allocated(cfg.device) / 1e6,
@@ -141,6 +132,9 @@ def my_main(cfg: DictConfig):
         if iter % cfg.data_shuffel_interval == 0 or iter == cfg.max_iters - 1:
             path_ = "./miniGRP.pth"
             torch.save(model, path_, pickle_module=dill) ## serialize class objects as well.
+            ## Save the grp_model.py file into the output folder as well
+            import shutil
+            shutil.copy(hydra.utils.get_original_cwd()+"/mini-grp/grp_model.py", log_dir)
             print("Model saved to " + path_)
         
         if cfg.simEval and (iter % cfg.eval_vid_iters == 0) and (iter !=0): ## Do this eval infrequently because it takes a fiar bit of compute
@@ -157,14 +151,14 @@ def my_main(cfg: DictConfig):
             ## Update the dataset
             shared_queue.put('shuffle')
 
-        xb, xp, xg, xgi, yb = cBuffer.get_batch_grp('train', cfg, cfg.batch_size)
+        xb, xp, xg, xgi, yb, last_action = cBuffer.get_batch_grp('train', cfg, cfg.batch_size)
 
         # evaluate the loss
         # Block masking: train with either text OR image goals (randomly) if enabled.
         mask_ = None
         if cfg.policy.random_masking_enabled:
             mask_ = (np.random.rand() < 0.5)  # True -> mask goal image tokens (use text); False -> mask text (use image)
-        logits, loss = model(xb, xg, xgi, yb, pose=xp, mask_=mask_)
+        logits, loss = model(xb, xg, xgi, yb, pose=xp, last_action=last_action, mask_=mask_)
         
         # backward pass
         loss.backward()

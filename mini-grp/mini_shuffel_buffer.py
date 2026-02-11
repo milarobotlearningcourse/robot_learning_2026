@@ -76,6 +76,8 @@ def libero_dataset_transform(trajectory):
         trajectory[i]["observation"]["eef_state"] = trajectory[i]["observation"]["state"][:6] ## TODO: Not sure if this is the information for wrist pos and rotation
         trajectory[i]["action"] = trajectory[i]["action"].numpy()
         trajectory[i]["action"][-1:] = 1 - np.clip(trajectory[i]["action"][-1:], 0, 1)
+        # libero actions are from [-1 , 1], and inverted for the gripper, bring this to the [0, 1] range
+        # trajectory[i]["action"][6] = ((trajectory[i]["action"][6] + 1.0) / 2.0) * -1
         trajectory[i]['observation']["natural_language_instruction"] = trajectory[i]["language_instruction"]
     return trajectory
 
@@ -235,23 +237,35 @@ class CircularBuffer:
                 "goal_text_full": dataset["goal_text_full"][:self._cfg.dataset.buffer_size],
                 "t5_language_embedding": dataset["t5_language_embedding"][:self._cfg.dataset.buffer_size] if self._cfg.dataset.encode_with_t5 else None,
                 "pose": dataset["pose"][:self._cfg.dataset.buffer_size],
+                "terminated": dataset["terminated"][:self._cfg.dataset.buffer_size],
+                "init_state": dataset["init_state"][:self._cfg.dataset.buffer_size] if "init_state" in dataset.column_names else None,
             }
             print("Time to load huggingface data and copy: ", time.time() - start__)
             for i in range(len(dataset_tmp["img"])):
-                if len(dataset_tmp["action"][i:i+self._cfg.policy.action_stacking]) < self._cfg.policy.action_stacking:
-                    print("Skipping index", i, "because action length is less than", self._cfg.policy.action_stacking)
-                    continue
+                # if len(dataset_tmp["action"][i:i+self._cfg.policy.action_stacking]) < self._cfg.policy.action_stacking:
+                #     print("Skipping index", i, "because action length is less than", self._cfg.policy.action_stacking)
+                #     continue
                 pose = dataset_tmp["pose"][i]
-                action = dataset_tmp["action"][i]
+                action = np.array(dataset_tmp["action"][i])
                 self.add(
                         dataset_tmp["img"][i], 
                         action,
                         dataset_tmp["goal_text_full"][i], 
                         dataset_tmp["goal_img"][i],
-                        language_instruction=dataset_tmp["t5_language_embedding"][i] if cfg.dataset.encode_with_t5 else None,
-                        terminal=0,
-                        pose=pose,
+                        language_instruction=dataset_tmp["t5_language_embedding"][i] if self._cfg.dataset.encode_with_t5 else None,
+                        terminated=dataset_tmp["terminated"][i],
+                        pose=np.concatenate([pose[2:5], pose[5:8], pose[:1]]),  # Rearranged to match eef pos, eef quat, gripper state
+                        init_state=dataset_tmp["init_state"][i] if "init_state" in dataset_tmp else None,   
                         )
+            if self._cfg.dataset.recompute_normalizations:
+                scale = 1.4
+                a_std, a_mean = ((self._dataset_tmp["action"][:self._count]).std(axis=0) + 1e-8) * scale, self._dataset_tmp["action"][:self._count].mean(axis=0)
+                self._cfg.dataset.action_std = [float(x) for x in a_std]
+                self._cfg.dataset.action_mean = [float(x) for x in a_mean   ]
+                print("Recomputed action normalizations: mean:", self._cfg.dataset.action_mean, " std:", self._cfg.dataset.action_std)
+                s_std, s_mean = ((self._dataset_tmp["pose"][:self._count]).std(axis=0) + 1e-8) * scale, self._dataset_tmp["pose"][:self._count].mean(axis=0)
+                self._cfg.dataset.pose_mean = [float(x) for x in s_mean]
+                self._cfg.dataset.pose_std = [float(x) for x in s_std]
             print("Loaded dataset with size:", self._count)
         elif self._cfg.dataset.load_dataset == "skip":
             pass
@@ -271,7 +285,8 @@ class CircularBuffer:
                     "goal_img": torch.tensor(np.zeros(shape=(size, self._cfg.image_shape[0], self._cfg.image_shape[0], 3)), dtype=torch.uint8, device=self._cfg.device),
                     # "rotation_delta": [], "open_gripper": [] 
                     "t5_language_embedding": torch.tensor(np.zeros(shape=(size, self._cfg.max_block_size, self._cfg.n_embd)), dtype=torch.float, device=self._cfg.device) if self._cfg.dataset.encode_with_t5 else None,
-                    "terminal": torch.tensor(np.zeros(shape=(size, 1)), dtype=torch.uint8, device=self._cfg.device),
+                    "terminated": torch.tensor(np.zeros(shape=(size, 1)), dtype=torch.uint8, device=self._cfg.device),
+                    "init_state": torch.tensor(np.zeros(shape=(size, 92)), dtype=torch.float, device=self._cfg.device) if self._cfg.dataset.use_init_state else None,
                     } 
         if old_data is not None:
             for key in _dataset_tmp:
@@ -291,8 +306,8 @@ class CircularBuffer:
         print("Memory used by the dataset cBuffer goal image:", asizeof.asizeof(self._dataset_tmp["goal_img"]) / 1e6, "MB")
         print("Memory used by the dataset cBuffer: t5_language_embedding", asizeof.asizeof(self._dataset_tmp["t5_language_embedding"]) / 1e6, "MB")
 
-    def add(self, obs, action, goal, goal_img, language_instruction=None, pose=None, terminal=0, 
-            morphology=0):
+    def add(self, obs, action, goal, goal_img, language_instruction=None, pose=None, terminated=0, 
+            morphology=0, init_state=None):
         """ Add an observation, action, goal, goal image, rotation delta, and open gripper state to the buffer."""
     
         self._dataset_tmp["img"][self._index] = torch.tensor(np.array(obs), dtype=torch.uint8, device=self._cfg.device)
@@ -302,7 +317,9 @@ class CircularBuffer:
             self._dataset_tmp["pose"][self._index] = torch.tensor(pose, dtype=torch.float32, device=self._cfg.device)  # Store robot pose
             
         self._dataset_tmp["goal_text_full"][self._index] = goal  # Store the full goal text
-        self._dataset_tmp["terminal"][self._index] = torch.tensor(terminal, dtype=torch.uint8, device=self._cfg.device)
+        if init_state is not None:
+            self._dataset_tmp["init_state"][self._index] = torch.tensor(init_state, dtype=torch.float32, device=self._cfg.device)   
+        self._dataset_tmp["terminated"][self._index] = torch.tensor(terminated, dtype=torch.uint8, device=self._cfg.device)
         
         ## Make goal embeddings of a fixed length and fill in the earlier chunks with the true goal data
         if self._cfg.dataset.encode_with_t5:
@@ -347,19 +364,9 @@ class CircularBuffer:
         # data = dataset['train'] if split == 'train' else dataset['test']
         data = self._dataset_tmp
         
-        ## Randomly sample indices for the batch but account for:
-        ## - obs_stacking history BEFORE the index (avoid negative indexing)
-        ## - action_stacking horizon AFTER the index (avoid running past the buffer end)
-        n = min(self._count, self._size)
-        min_ix = cfg.policy.obs_stacking - 1
-        # We will access actions at ix ... ix + (action_stacking - 1)
-        max_ix_inclusive = n - cfg.policy.action_stacking
-        if max_ix_inclusive < min_ix:
-            raise ValueError(
-                f"Not enough data for obs_stacking={cfg.policy.obs_stacking} and "
-                f"action_stacking={cfg.policy.action_stacking}: n={n}"
-            )
-        ix = np.random.randint(min_ix, max_ix_inclusive + 1, size=(batch_size,))
+        ## Randomly sample indices for the batch but account for action stacking past the index and obs_stacking before the index.
+        ix = np.random.randint(min(self._count, self._size)-((cfg.policy.action_stacking + cfg.policy.obs_stacking)-1), size=(batch_size,))
+        ix = torch.tensor(ix).to(cfg.device)
         
         obs_ = data["img"][ix-cfg.policy.obs_stacking+1].to(torch.float).unsqueeze(1) # Convert to [B, T, C, H, W] format for torchvision transforms, and back.
         for i in range(1, cfg.policy.obs_stacking): ## This is slow but works.
@@ -367,7 +374,11 @@ class CircularBuffer:
         obs_ = transform_crop_scale(obs_) # Convert to [B, T, C, H, W] format for torchvision transforms, and back.
         x = self._model.normalize_state(rearrange(obs_, 'b t h w c -> b h w (c t)', c=3, t=cfg.policy.obs_stacking)) ## Rearranging the image to have the stacked history in the last channel dimension)  # Flatten the time dimension for batching
     
-        pose = data["pose"][ix].to(torch.float32).unsqueeze(1) # Convert to [B, T, C]
+        pose = self._model.encode_pose(data["pose"][ix].to(torch.float32)) # Convert to [B, T, C]
+        ## Add noise to the pose for data augmentation
+        if cfg.policy.add_noise_to_state:
+            noise = torch.randn_like(pose) * cfg.policy.state_noise_std
+            pose = pose + noise
 
         if cfg.dataset.encode_with_t5:
             x_goal = torch.tensor(data["t5_language_embedding"][ix], dtype=torch.float, device=cfg.device)
@@ -377,14 +388,83 @@ class CircularBuffer:
         x_goal_img = self._model.normalize_state(transform_crop_scale(data["goal_img"][ix].to(torch.float))) ## [B, C, H,  W]
         x_goal_img = x_goal_img # Convert to [B, H, W, C] format from torchvision.
     
-        # Targets: predict action(s) aligned with the *latest* stacked observation at index ix.
-        y = self._model.encode_action(data["action"][ix])
-        if cfg.policy.action_stacking > 1:
-            ## Stack the next cfg.policy.action_stacking-1 actions onto the feature dimension.
-            for i in range(1, cfg.policy.action_stacking):  ## This is slow but works.
-                y = torch.cat((y, self._model.encode_action(data["action"][ix + i])), axis=1)
+        # TODO: 
+        ## Provide the block masking logic for the attention head
+        y = 0 ## discrete or continuous actions
         
-        return x, pose, x_goal, x_goal_img, y
+        # Get last action (action at timestep before current observation)
+        ## Zero out the last action if ix == 0
+        row_mask = torch.logical_and(ix > 0, (data["terminated"][ix - 1][:,0] - 1) * -1) # if the previous step was terminated, we also zero out the last action
+        last_action = torch.zeros_like(y[:, :cfg.action_dim])
+        last_action[row_mask] = data["action"][ix - 1][row_mask]
+        last_action = self._model.encode_action(last_action)
+        # last_action = self._model.encode_action(data["action"][ix - 1]) if ix > 0 else torch.zeros_like(y[:, :cfg.action_dim])
+        ## Add noise to the last_action for data augmentation
+        if cfg.policy.add_noise_to_state:
+            noise = torch.randn_like(last_action) * cfg.policy.state_noise_std
+            last_action = last_action + noise
+        
+        return x, pose, x_goal, x_goal_img, y, last_action
+    
+    def get_trajectory(self, trajectory_index=0):
+        """
+        Extract a trajectory from the buffer based on trajectory index.
+        Trajectories are separated by the 'terminated' indicator.
+        
+        Args:
+            trajectory_index (int): Which trajectory to retrieve (0 for first, 1 for second, etc.)
+        
+        Returns:
+            list: A list of dictionaries, each containing a step with keys:
+                - 'observation': image observation
+                - 'action': action taken
+                - 'goal': goal text
+                - 'goal_img': goal image
+                - 'pose': pose/state information
+                - 't5_language_embedding': T5 embedding (if applicable)
+                - 'terminated': boolean indicating if episode ended
+        """
+        data = self._dataset_tmp
+        trajectory_count = 0
+        trajectory_start = None
+        trajectory = []
+        
+        # Find the start of the requested trajectory
+        for i in range(min(self._count, self._size)):
+            if trajectory_count == trajectory_index:
+                trajectory_start = i
+                break
+            
+            # Check if this step is terminated
+            if data["terminated"][i].item() == 1:
+                trajectory_count += 1
+        
+        if trajectory_start is None:
+            raise IndexError(f"Trajectory index {trajectory_index} not found in buffer")
+        
+        # Extract steps until we hit a terminated state
+        for i in range(trajectory_start, min(self._count, self._size)):
+            step_dict = {
+                'observation': data["img"][i].detach().cpu().numpy(),
+                'action': data["action"][i].detach().cpu().numpy(),
+                'goal': data["goal_text_full"][i],
+                'goal_img': data["goal_img"][i].detach().cpu().numpy(),
+                'pose': data["pose"][i].detach().cpu().numpy(),
+                'terminated': bool(data["terminated"][i].item()),
+                'init_state': data["init_state"][i].detach().cpu().numpy() if self._cfg.dataset.use_init_state else None,
+            }
+            
+            # Add T5 embedding if available
+            if self._cfg.dataset.encode_with_t5 and data["t5_language_embedding"] is not None:
+                step_dict['t5_language_embedding'] = data["t5_language_embedding"][i].detach().cpu().numpy()
+            
+            trajectory.append(step_dict)
+            
+            # Stop if we've reached a terminated state
+            if data["terminated"][i].item() == 1:
+                break
+        
+        return trajectory
     
     def shuffle(self, shared_queue):
         print("num", shared_queue)
@@ -470,7 +550,7 @@ def get_dataset_portion(builder, cbuffer, cfg, list_, dataset_name=None):
                             action = episode[i]['action'],
                             goal= episode[i]['observation']["natural_language_instruction"].numpy().decode(),
                             goal_img=goal_img,
-                            terminal = 1 if (i == (len(episode) - 1)) or episode[i]['is_terminal'] else 0,
+                            terminated = 1 if (i == (len(episode) - 1)) or episode[i]['terminated'] else 0,
                             pose = pose,
                             # morphology = cfg.dataset.dataset_indicies[dataset_name]["morphology"],
                             )
@@ -507,7 +587,7 @@ def _create_dataset_generator(builder, cfg, dataset_name, ix):
                     "action": episode[i]['action'],
                     "goal_text_full": episode[i]['observation']["natural_language_instruction"].numpy().decode(),
                     "goal_img": Image.fromarray(goal_img.astype(np.uint8), mode='RGB'),
-                    "terminal": 1 if (i == (len(episode) - 1)) or episode[i]['is_terminal'] else 0,
+                    "terminated": 1 if (i == (len(episode) - 1)) or episode[i]['terminated'] else 0,
                     "pose": pose,
                 }
 
@@ -555,7 +635,7 @@ def get_multi_dataset_portion(builders, cbuffer, cfg):
             #         action=sample["action"],
             #         goal=sample["goal"],
             #         goal_img=sample["goal_img"],
-            #         terminal=sample["terminal"],
+            #         terminated=sample["terminated"],
             #         pose=sample["pose"],
             #     )
         else:
@@ -578,6 +658,12 @@ def my_main(cfg: DictConfig):
     model = GRP(cfg)
     model.to(cfg.device)
     np.random.seed(cfg.r_seed)
+    ## Prompt to make sure user wants to overwrite existing dataset
+
+    response = input(f"Dataset {cfg.dataset.to_name} already exists. Overwrite? (y/n): ")
+    if response.lower() != 'y':
+        print("Exiting without overwriting dataset.")
+        return
     cbuffer = CircularBuffer(cfg.dataset.buffer_size, cfg, model)
 
     print("Dataset shape:", len(cbuffer._dataset_tmp["img"]))

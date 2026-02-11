@@ -7,7 +7,7 @@ experiment:
   project: mini-grp
   description: "simple env with 64pix images and pose data"
 
-# Model type: "transformer" or "convnet"
+# Model type: "transformer" or "convnet" or "dataset" or "dense"
 model: 
   type: "transformer"
 
@@ -28,16 +28,22 @@ policy:
   dtype: 'float32'
   use_pose_data: 1
   random_masking_enabled: false  # Set to false to skip random masking, true to enable it
+  use_last_action: false  # New flag to indicate whether to use last action as input
+  add_noise_to_state: true  # New flag to indicate whether to add noise to state
+  state_noise_std: 0.01  # Standard deviation of the noise to be added
 
 testing: false
 eval_vid_iters: 2500
 gradient_accumulation_steps: 1
 
-simEval: ["libero"] # "simpler_env" or "libero"
+simEval: [] # "simpler_env" or "libero"
 sim:
   eval_episodes: 1
-  eval_tasks: [0, 1, 2, 3]
+  eval_tasks: [0]  # which tasks to eval on
   episode length: 500
+  task_set: "libero_spatial"
+  libero_init_state_file: "/openvla/experiments/robot/libero/libero_spatial_init_states_and_goals.hdf" # Path to HDF5 file containing initial states for LIBERO tasks.
+  libero_init_state_hf_repo: "gberseth/libero_spatial_init_states" # Dataset key within the HDF5 file for LIBERO initial states.
 
 # ------------
 

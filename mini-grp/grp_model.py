@@ -185,7 +185,7 @@ class GRP(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, images, goals_txt, goal_imgs, targets=None, pose=None, mask_=False):
+    def forward(self, images, goals_txt, goal_imgs, targets=None, pose=None, mask_=False, last_action=None):
         """
         images:    [B, H, W, C_obs]
         goals_txt: [B, T] (token ids) or [B, T, n_embd] if encode_with_t5
@@ -328,6 +328,12 @@ class GRP(nn.Module):
 
     def preprocess_goal_image(self, image):
         return self.preprocess_state(image)
+    
+    def reset(self):
+        """
+        Reset the model's internal state if needed.
+        """
+        return None
 
     def encode_text_goal(self, goal, tokenizer=None, text_model=None):
         import numpy as _np
@@ -364,32 +370,54 @@ class GRP(nn.Module):
         return goal_
 
     def decode_action(self, action_tensor):
-        
-        """
-        Docstring for decode_action
-        
-        :param self: Description
-        :param action_tensor: Description
-        self._decode_action = lambda binN: (binN * action_std) + action_mean  # Undo mapping to [-1, 1]
-        """
+        """Decode normalized actions to original action space"""
         import torch as _torch
-        ## The action tensor is of shape (batch_size, action_dim * action_stacking) so we need to repeat the mean and std per action stacking
-        action_mean = _torch.tensor(np.repeat(self._cfg.env.action_mean, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
-        action_std = _torch.tensor(np.repeat(self._cfg.env.action_std, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
-        return (action_tensor * action_std) + action_mean
-    
+        action_mean = _torch.tensor(np.repeat([self._cfg.dataset.action_mean], self._cfg.policy.action_stacking, axis=0).flatten(), 
+                                   dtype=action_tensor.dtype, device=action_tensor.device)
+        action_std = _torch.tensor(np.repeat([self._cfg.dataset.action_std], self._cfg.policy.action_stacking, axis=0).flatten(), 
+                                  dtype=action_tensor.dtype, device=action_tensor.device)
+        return (action_tensor * (action_std)) + action_mean
+
     def encode_action(self, action_float):
+        """Encode actions to normalized space [-1, 1]"""
+        import torch as _torch
+        ## If the action_float has length greater than action_dim then use stacking otherwise just use normal standardiaztion vectors
+        if action_float.shape[1] == len(self._cfg.dataset.action_mean):
+            action_mean = _torch.tensor(self._cfg.dataset.action_mean, dtype=action_float.dtype, device=action_float.device)
+            action_std = _torch.tensor(self._cfg.dataset.action_std, dtype=action_float.dtype, device=action_float.device)
+            return (action_float - action_mean) / (action_std)  
+
+        action_mean = _torch.tensor(np.repeat([self._cfg.dataset.action_mean], self._cfg.policy.action_stacking, axis=0).flatten(), 
+                                   dtype=action_float.dtype, device=action_float.device)
+        action_std = _torch.tensor(np.repeat([self._cfg.dataset.action_std], self._cfg.policy.action_stacking, axis=0).flatten(), 
+                                  dtype=action_float.dtype, device=action_float.device)
+        return (action_float - action_mean) / (action_std)
+    
+    def decode_state(self, state_tensor):
         """
-        Docstring for encode_action
+        Docstring for decode_state
         
         :param self: Description
-        :param action_float: Description
-        self._encode_action = lambda af:   (af - action_mean)/(action_std) # encoder: take a float, output an integer
+        :param state_tensor: Description
+        self._decode_state = lambda sinN: (sinN * state_std) + state_mean  # Undo mapping to [-1, 1]
         """
         import torch as _torch
-        action_mean = _torch.tensor(self._cfg.env.action_mean, dtype=action_float.dtype, device=action_float.device)
-        action_std = _torch.tensor(self._cfg.env.action_std, dtype=action_float.dtype, device=action_float.device)
-        return (action_float - action_mean) / action_std
+        state_mean = _torch.tensor(self._cfg.dataset.state_mean, dtype=state_tensor.dtype, device=state_tensor.device)
+        state_std = _torch.tensor(self._cfg.dataset.state_std, dtype=state_tensor.dtype, device=state_tensor.device)
+        return (state_tensor * (state_std)) + state_mean
+    
+    def encode_state(self, state_float):
+        """
+        Docstring for encode_state
+        
+        :param self: Description
+        :param state_float: Description
+        self._encode_state = lambda sf:   (sf - state_mean)/(state_std) # encoder: take a float, output an integer
+        """
+        import torch as _torch
+        state_mean = _torch.tensor(self._cfg.dataset.state_mean, dtype=state_float.dtype, device=state_float.device)
+        state_std = _torch.tensor(self._cfg.dataset.state_std, dtype=state_float.dtype, device=state_float.device)
+        return (state_float - state_mean) / (state_std)
 
 
 @torch.no_grad()
@@ -399,12 +427,8 @@ def estimate_loss(model, dataset):
     for split in ['train', 'val']:
         losses = torch.zeros(model._cfg.eval_iters)
         for k in range(model._cfg.eval_iters):
-            X, x_pose, x_goal, x_goal_img, Y = dataset.get_batch_grp(split, model._cfg, model._cfg.batch_size)
-            # Match training-time masking behavior (if enabled)
-            mask_ = None
-            if model._cfg.policy.random_masking_enabled:
-                mask_ = (np.random.rand() < 0.5)
-            logits, loss = model(X, x_goal, x_goal_img, Y, pose=x_pose, mask_=mask_)
+            X, x_pose, x_goal, x_goal_img, Y, last_action = dataset.get_batch_grp(split, model._cfg, model._cfg.batch_size)
+            logits, loss = model(X, x_goal, x_goal_img, Y, pose=x_pose, last_action=last_action)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()
