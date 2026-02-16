@@ -1,0 +1,64 @@
+defaults:
+  - dataset: libero
+
+# Model selection: 'dreamer' or 'simple'
+model_type: 'dreamer'
+
+# Loss coefficients for model training
+loss_coeffs:
+  pred_coeff: 1.
+  dyn_coeff: 1.
+  rep_coeff: 0.1
+
+# CEM Planner parameters
+planner:
+  horizon: 12
+  num_iterations: 5
+  num_samples: 100
+  num_elites: 10
+  temperature: 0.5
+
+experiment:
+  name: mini_grp_dreamer
+  project: mini-grp
+  description: "DreamerV3 world model with 64pix images and pose data"
+
+# Model type: "transformer" or "convnet" or "dataset" or "dense"
+model: 
+  type: "transformer"
+
+batch_size: 256
+max_block_size: 16
+vocab_size: 32
+n_patches: 8
+patch_size: 8
+max_iters: 25000
+eval_interval: 100
+learning_rate: 3e-4
+lr_schedule: linear
+eval_iters: 5
+policy:
+  action_stacking: 1
+  obs_stacking: 1
+  use_image_augmentations: false
+  dtype: 'float32'
+  use_pose_data: 1
+  random_masking_enabled: false
+  use_last_action: false
+  add_noise_to_state: true
+  state_noise_std: 0.01
+
+testing: false
+eval_vid_iters: 2500
+gradient_accumulation_steps: 1
+
+simEval: ["libero"]
+sim:
+  eval_episodes: 1
+  eval_tasks: [0,1]
+  episode length: 500
+  task_set: "libero_spatial"
+  libero_init_state_file: "/openvla/experiments/robot/libero/libero_spatial_init_states_and_goals.hdf"
+  libero_init_state_hf_repo: "gberseth/libero_spatial_init_states"
+
+r_seed: 1337
