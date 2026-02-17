@@ -6,9 +6,11 @@ In this assignment, you will implement model-based reinforcement learning for ro
 
 You will progressively build up your understanding by:
 1. Training a simple pose-based world model
-2. Integrating a policy to improve planning efficiency  
+2. Integrating a policy to improve planning efficiency
 3. Upgrading to DreamerV3, a state-of-the-art world model with image observations
 4. Training an image-based policy that works with DreamerV3
+
+This writeup intentionally avoids step-by-step recipes. Your job is to read the provided code, identify the missing pieces, and justify your design choices in the report.
 
 This assignment teaches you how model-based planning can complement learned policies and how to scale from simple state representations (poses) to high-dimensional observations (images).
 
@@ -76,13 +78,16 @@ First, examine [simple_world_model.py](simple_world_model.py). The `SimpleWorldM
 
 **What to implement**: Complete the training loop in [dreamer_model_trainer.py](dreamer_model_trainer.py)
 
-You need to implement the `compute_loss` method in the `ModelTrainingWrapper` class for the `'simple'` model type. The method should:
+You need to implement the `compute_loss` method in the `ModelTrainingWrapper` class for the `'simple'` model type. Define and justify the loss terms you choose (pose, reward, and any regularization). You should be able to explain why your implementation is numerically stable.
 
 ### Part 1.3: Implementing CEM Planning
 
 **What to implement**: Complete the CEM planner in [planning.py](planning.py)
 
-The `CEMPlanner` class implements the Cross-Entropy Method. You need to complete:
+The `CEMPlanner` class implements the Cross-Entropy Method. You need to:
+- Decide how to initialize the action distribution and justify it
+- Decide how to handle action bounds during sampling and explain your choice
+- Implement a stopping or convergence condition (even if you keep a fixed iteration count, justify why)
 
 ### Part 1.4: Running Experiments
 
@@ -106,6 +111,10 @@ python dreamer_model_trainer.py \
 - Visualize planned action sequences (optional: modify code to save these)
 - Compare model prediction error on validation data
 
+**Required reflection**:
+- Identify a failure case from your evaluation and explain what part of the model or planner caused it
+- Propose one concrete change that could fix the failure, and test it
+
 **Expected results**:
 - Training loss should decrease and converge
 - Success rate should be > 0 (random policy gets ~0%)
@@ -116,6 +125,7 @@ python dreamer_model_trainer.py \
 1. How does the planning horizon affect success rate? Try `horizon=[5, 10, 15]`
 2. How does the number of CEM samples affect planning quality? Try `num_samples=[50, 100, 200]`
 3. What is the trade-off between planning time and success rate?
+4. Explain one design decision you made in the CEM implementation and why you rejected at least one alternative.
 
 ---
 
@@ -139,37 +149,14 @@ This is more efficient than random initialization because:
 
 **What to implement**: Complete the policy training in [planning.py](planning.py)
 
-The `PolicyPlanner` has an `update` method that trains the policy using data collected from the environment. You need to implement:
-
-1. **Data preparation**:
-   ```python
-   def update(self, states, actions):
-       # states: (B, pose_dim) - collected poses
-       # actions: (B, action_dim) - collected actions from CEM planner
-   ```
-
-2. **Training loop**:
-   - Predict actions using policy: `pred_actions = self.policy_model(states)`
-   - Compute behavior cloning loss: `loss = MSELoss(pred_actions, actions)`
-   - Backpropagate and update policy parameters
-   - Track and return loss
+The `PolicyPlanner` has an `update` method that trains the policy using data collected from the environment. You need to:
+- Decide how you batch and normalize the data (justify your choices)
+- Implement a training loop with a loss that you can explain and defend
+- Add at least one sanity check or diagnostic metric (for example, action distribution statistics or prediction error on a held-out subset)
 
 ### Part 2.3: Integrating Policy with CEM
 
-Once the policy is trained, integrate it with CEM:
-
-1. Modify CEM initialization to use policy predictions:
-   ```python
-   # In CEMPlanner.plan():
-   if self.policy_model is not None:
-       # Get policy prediction for initial action distribution
-       with torch.no_grad():
-           policy_actions = self.policy_model.predict_sequence(initial_state, self.horizon)
-       action_mean = policy_actions  # Initialize mean with policy
-       action_std = torch.ones_like(policy_actions) * 0.5  # Lower std for refinement
-   ```
-
-2. The policy provides a good starting point, and CEM refines it
+Once the policy is trained, integrate it with CEM. Decide how the policy influences the initial distribution and justify any fixed hyperparameters (like initial std) you choose. Explain how your choice affects exploration vs exploitation.
 
 ### Part 2.4: Running Experiments
 
@@ -201,11 +188,15 @@ python dreamer_model_trainer.py \
 - Visualize how CEM refines the policy's initial predictions
 - Analyze cases where policy alone fails but policy+CEM succeeds
 
+**Required ablation**:
+- Change one design choice in your policy training (optimizer, loss, normalization, or architecture) and report its impact
+
 ### Questions for Part 2:
 
 1. How much does the policy improve CEM efficiency? Compare success rate with 50 samples (policy-guided) vs 100 samples (random)
 2. Can the policy alone (without CEM refinement) solve the task? Why or why not?
 3. What are the benefits of combining learned policies with model-based planning?
+4. Provide one plot or table that demonstrates a non-obvious failure mode of the policy or planner.
 
 ---
 
@@ -243,11 +234,15 @@ DreamerV3 (see [dreamerV3.py](dreamerV3.py)) is a state-of-the-art world model w
 
 ### Part 3.2: Training DreamerV3
 
-**What to implement**: The DreamerV3 training 
+**What to implement**: The DreamerV3 training
+
+You must identify which losses are needed (reconstruction, reward, continue, and dynamics/representation) and explain how they are weighted. If you change any default weights, justify them with a small ablation.
 
 ### Part 3.3: CEM Planning with DreamerV3
 
 **What to implement**: Complete the `_evaluate_sequences_dreamer` method in [planning.py](planning.py)
+
+You should be able to explain how imagined rollouts are generated and how rewards are accumulated. Include a brief discussion of any numerical or stability issues you encountered.
 
 ### Part 3.4: Running Experiments
 
@@ -270,6 +265,9 @@ python dreamer_model_trainer.py \
 - Visualize reconstructed images to verify the model learned visual features
 - Analyze the three loss components over training
 
+**Required diagnostic**:
+- Show at least one reconstruction example that fails and explain why
+
 ### Questions for Part 3:
 
 1. How does DreamerV3 compare to SimpleWorldModel in terms of:
@@ -278,6 +276,7 @@ python dreamer_model_trainer.py \
    - Final success rate
 2. Why might image-based models be beneficial even if pose is available?
 3. Visualize image reconstructions - what features did the model learn?
+4. Describe one implementation detail that you had to discover by reading the code rather than the writeup.
 
 ---
 
@@ -289,14 +288,11 @@ python dreamer_model_trainer.py \
 
 **What to implement**: Modify the `PolicyPlanner` to work with images
 
+You must choose an image encoder or reuse parts of DreamerV3. Explain why your choice is appropriate and what alternatives you considered.
+
 ### Part 4.3: Policy-Guided CEM with DreamerV3
 
-Combine the image-based policy with CEM planning:
-
-1. Policy predicts initial action sequence from current RSSM state
-2. CEM samples around this prediction
-3. Imagines outcomes using DreamerV3 dynamics model
-4. Selects best refined sequence
+Combine the image-based policy with CEM planning. Clearly describe how information flows from image to RSSM state to action distribution, and explain any assumptions you make about temporal alignment or horizon length.
 
 ### Part 4.4: Running Experiments
 
@@ -331,12 +327,16 @@ python dreamer_model_trainer.py \
 - Create a table showing success rates and planning times
 - Analyze which approach works best and why
 
+**Required robustness check**:
+- Evaluate one additional seed or environment variation and discuss variability
+
 ### Questions for Part 4:
 
 1. Create a comparison table of all methods. Which performs best?
 2. What are the trade-offs between model complexity and performance?
 3. When would you use each approach in practice?
 4. How does sample efficiency compare between the methods?
+5. Describe one result that surprised you and provide a plausible explanation.
 
 ---
 
@@ -398,6 +398,11 @@ Submit a PDF report addressing all questions from each part. Your report should 
 - Success rate vs planning horizon plot (horizon = 5, 10, 15)
 - Success rate vs number of CEM samples (samples = 50, 100, 200)
 - Discussion: How does planning horizon affect performance? What is the trade-off between sample count and computation time?
+
+**Additional report requirements**:
+- Include a short "design decisions" section that explains at least three choices you made by reading the code (not the writeup)
+- Include at least two failure-case analyses with screenshots or plots
+- Cite the exact experiment name and random seed for every plot or table
 
 **Part 2: Policy-Guided Planning**  
 - Comparison table:
