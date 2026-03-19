@@ -1,0 +1,32 @@
+experiment:
+  name: hw3_dagger
+  project: mini-grp-hw3
+  description: "DAgger: distill dense teacher into transformer student, then RL fine-tune"
+
+r_seed: 1337
+
+teacher_checkpoint: ???      # required: path to dense PPO policy checkpoint
+student_init_checkpoint: ??? # required: path to HW1 miniGRP.pth checkpoint
+
+sim:
+  task_set: "libero_spatial"
+  eval_tasks: [9]
+  eval_episodes: 5
+  episode_length: 300
+  use_fast_env: true
+
+dagger:
+  num_rounds: 10             # DAgger iterations
+  rollouts_per_round: 20     # student rollouts per round
+  bc_epochs_per_round: 10    # supervised update epochs per round
+  beta_schedule: linear      # how student/teacher mixing decays ("linear" or "constant")
+  beta_init: 1.0             # initial teacher mixing coefficient (1=teacher, 0=student)
+  dataset_save_dir: "dagger_datasets"
+
+training:
+  learning_rate: 1e-4
+  minibatch_size: 64
+  max_grad_norm: 0.5
+
+eval_interval: 1             # evaluate every N dagger rounds
+save_interval: 5             # save checkpoint every N dagger rounds
